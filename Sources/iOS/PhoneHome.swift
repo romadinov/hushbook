@@ -21,7 +21,15 @@ struct PhoneHome: View {
     var body: some View {
         NavigationStack(path: $path) {
             Group {
-                if layout == .list { timeline } else { grid }
+                switch layout {
+                case .list: timeline
+                case .map:
+                    VStack(spacing: 0) {
+                        header
+                        EntriesMap(entries: visible) { path.append(.entry($0.id, isNew: false)) }
+                    }
+                default: grid
+                }
             }
             .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)

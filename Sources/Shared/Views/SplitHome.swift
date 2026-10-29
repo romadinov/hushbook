@@ -31,6 +31,8 @@ struct SplitHome: View {
                     ScrollView { CalendarGrid(entries: visible.filter { !$0.isEmpty }, onSelectDay: selectDay) }
                 case .media:
                     ScrollView { MediaGrid(entries: visible, columns: 4) { selection = $0.id }.padding(2) }
+                case .map:
+                    EntriesMap(entries: visible.filter { !$0.isEmpty }) { selection = $0.id }
                 }
             }
                         #if os(macOS)
@@ -91,6 +93,12 @@ struct SplitHome: View {
                 self.layout = layout
             }
             #if DEBUG
+            if DiaryStore.demoScreen == "place" {
+                Task {
+                    try? await Task.sleep(for: .seconds(1))
+                    selection = store.saved.first { $0.location != nil }?.id
+                }
+            }
             if DiaryStore.demoScreen == "voice" {
                 Task {
                     try? await Task.sleep(for: .seconds(1))

@@ -2,8 +2,8 @@ name: Hushbook
 options:
   bundleIdPrefix: com.romadinov
   deploymentTarget:
-    iOS: "18.0"
-    macOS: "15.0"
+    iOS: "26.0"
+    macOS: "26.0"
   createIntermediateGroups: true
   developmentLanguage: en
 settings:
@@ -37,6 +37,8 @@ targets:
         PRODUCT_NAME: Hushbook
         PRODUCT_BUNDLE_IDENTIFIER: com.romadinov.hushbook.mac
         INFOPLIST_KEY_NSMicrophoneUsageDescription: Record voice notes for your diary entries.
+        INFOPLIST_KEY_NSLocationUsageDescription: New entries remember where you wrote them, encrypted with the entry.
+        INFOPLIST_KEY_NSLocationWhenInUseUsageDescription: New entries remember where you wrote them, encrypted with the entry.
         INFOPLIST_KEY_CFBundleDisplayName: Hushbook
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.lifestyle
         INFOPLIST_KEY_NSHumanReadableCopyright: ""
@@ -65,6 +67,7 @@ targets:
         NSFaceIDUsageDescription: Face ID unlocks your diary after you have entered its password.
         NSCameraUsageDescription: Take photos for your diary entries.
         NSMicrophoneUsageDescription: Record voice notes for your diary entries.
+        NSLocationWhenInUseUsageDescription: New entries remember where you wrote them, encrypted with the entry.
         NSPhotoLibraryUsageDescription: Add photos from your library to diary entries.
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
         UISupportedInterfaceOrientations~ipad: [UIInterfaceOrientationPortrait, UIInterfaceOrientationPortraitUpsideDown, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]

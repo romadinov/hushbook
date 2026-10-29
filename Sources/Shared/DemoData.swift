@@ -30,6 +30,12 @@ extension DiaryStore {
             if let color, let data = Self.swatch(color), let id = await addPhoto(data) { ids.append(id) }
             var e = newDraft(date: Calendar.current.date(byAdding: .day, value: -ago, to: .now)!.addingTimeInterval(Double(-ago * 1300)), photoIDs: ids)
             e.text = text; e.tags = tags; e.starred = star
+            let places = [("Mordialloc Beach", "Mordialloc VIC", -38.0057, 145.0868), ("66 Ormond Ave", "Mitcham VIC", -37.8166, 145.1932),
+                          ("Brighton Beach", "Brighton VIC", -37.9177, 144.9867), ("Lygon St", "Carlton VIC", -37.7990, 144.9670)]
+            if ago % 2 == 0 || ago == 3 {
+                let p = places[ago % places.count]
+                e.location = EntryLocation(latitude: p.2, longitude: p.3, name: p.0, locality: p.1, country: "Australia")
+            }
             save(e)
         }
     }

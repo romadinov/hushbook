@@ -24,6 +24,8 @@
 	<string>Take photos for your diary entries.</string>
 	<key>NSFaceIDUsageDescription</key>
 	<string>Face ID unlocks your diary after you have entered its password.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>New entries remember where you wrote them, encrypted with the entry.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Record voice notes for your diary entries.</string>
 	<key>NSPhotoLibraryUsageDescription</key>

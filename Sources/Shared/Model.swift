@@ -11,6 +11,7 @@ struct Entry: Codable, Identifiable, Hashable, Sendable {
     var modified = Date()
     /// Optional so entries saved before voice notes existed still decode.
     var audioNotes: [AudioNote]?
+    var location: EntryLocation?
 
     var audio: [AudioNote] {
         get { audioNotes ?? [] }
@@ -86,13 +87,14 @@ enum DiaryFilter: Hashable {
 }
 
 enum DiaryLayout: String, CaseIterable, Identifiable {
-    case list = "List", calendar = "Calendar", media = "Media"
+    case list = "List", calendar = "Calendar", media = "Media", map = "Map"
     var id: String { rawValue }
     var symbol: String {
         switch self {
         case .list: "list.bullet"
         case .calendar: "calendar"
         case .media: "photo.on.rectangle"
+        case .map: "map"
         }
     }
 }

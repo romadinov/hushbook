@@ -24,6 +24,8 @@ final class DiaryStore {
 
     var rememberDays: Int { didSet { UserDefaults.standard.set(rememberDays, forKey: "rememberDays") } }
     var autoLockSeconds: Int { didSet { UserDefaults.standard.set(autoLockSeconds, forKey: "autoLockSeconds") } }
+    /// Remember where new entries are written.
+    var addLocation: Bool { didSet { UserDefaults.standard.set(addLocation, forKey: "addLocation") } }
     var journalColor: JournalColor {
         didSet { UserDefaults.standard.set(journalColor.rawValue, forKey: "journalColor") }
     }
@@ -52,6 +54,7 @@ final class DiaryStore {
         autoLockSeconds = defaults.object(forKey: "autoLockSeconds") as? Int ?? defaultAutoLock
         useBiometrics = defaults.object(forKey: "useBiometrics") as? Bool ?? true
         journalColor = .current
+        addLocation = defaults.object(forKey: "addLocation") as? Bool ?? true
         sync = CloudSync(store: local)
         phase = local.loadVault() == nil ? .checkingCloud : .locked
         imageCache.countLimit = 400
@@ -440,7 +443,17 @@ final class DiaryStore {
         for (i, item) in items.enumerated() {
             importProgress = (i, items.count)
             guard key != nil else { break }   // locked mid-import
-            if local.envelope(item.entry.id) != nil { report.skipped += 1; continue }
+            if local.envelope(item.entry.id) != nil {
+                // Imported before locations were supported: add the location, keep everything else.
+                if let location = item.entry.location, var existing = entry(item.entry.id), existing.location == nil {
+                    existing.location = location
+                    save(existing)
+                    report.locationsAdded += 1
+                } else {
+                    report.skipped += 1
+                }
+                continue
+            }
             var entry = item.entry
             entry.photoIDs = []
             for photo in item.photos {

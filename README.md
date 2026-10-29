@@ -33,12 +33,20 @@ the entry, and transcribed **on the device** (audio is never sent anywhere). The
   shows status, can pre-download, and can force Russian or English.
 - Diagnostic: `Hushbook.app/Contents/MacOS/Hushbook --transcribe-test file.m4a …` prints what a note would become.
 
+## Location
+
+New entries record where they were written (When In Use permission; Settings → Location turns it off). The location
+is stored **inside the sealed entry**, so iCloud never sees it. Place names come from MapKit's
+`MKReverseGeocodingRequest` and maps from Apple Maps; Apple sees the coordinates looked up, not the entry. Each
+entry shows a small map (tap for a larger one / Open in Maps), list rows show the place, and the **Map** view shows
+every entry as a pin. Entry ⋯ menu: Add Current Location / Remove Location.
+
 ## Importing from Day One
 
 In Day One (Mac): **File → Export → JSON** (choose all journals). Then in Hushbook (Mac, unlocked):
 **File → Import from Day One…** and pick the .zip. Text, dates, tags, starred and photos come across. Day One
 Markdown is converted to plain text, and inline photos move to the entry's photo strip. Importing the same export
-again skips entries that are already there. Videos, audio, location and weather are not imported. Imported entries
+again skips entries that are already there. Locations come across too; importing the same export again adds locations to entries imported before this was supported. Videos, audio and weather are not imported. Imported entries
 sync to the iPhone. Delete the export zip afterwards: it is not encrypted.
 
 ## Sync

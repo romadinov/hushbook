@@ -9,10 +9,11 @@ enum DayOneImport {
     struct Item { let entry: Entry; let photos: [Photo] }
 
     struct Report {
-        var imported = 0, skipped = 0, photos = 0, missingPhotos = 0
+        var imported = 0, skipped = 0, photos = 0, missingPhotos = 0, locationsAdded = 0
         var summary: String {
             var s = "Imported \(imported) entr\(imported == 1 ? "y" : "ies") and \(photos) photo\(photos == 1 ? "" : "s")."
             if skipped > 0 { s += " \(skipped) were already in Hushbook." }
+            if locationsAdded > 0 { s += " Added locations to \(locationsAdded) earlier imports." }
             if missingPhotos > 0 { s += " \(missingPhotos) photo\(missingPhotos == 1 ? "" : "s") weren't in the export." }
             return s
         }
@@ -68,7 +69,17 @@ enum DayOneImport {
         entry.tags = (raw["tags"] as? [String]) ?? []
         entry.starred = raw["starred"] as? Bool ?? false
         entry.photoIDs = photos.map(\.id)
+        entry.location = location(raw["location"] as? [String: Any])
         return Item(entry: entry, photos: photos)
+    }
+
+    private static func location(_ raw: [String: Any]?) -> EntryLocation? {
+        guard let raw, let lat = (raw["latitude"] as? NSNumber)?.doubleValue, let lon = (raw["longitude"] as? NSNumber)?.doubleValue
+        else { return nil }
+        let locality = [raw["localityName"] as? String, raw["administrativeArea"] as? String]
+            .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " ")
+        return EntryLocation(latitude: lat, longitude: lon, name: raw["placeName"] as? String,
+                             locality: locality.isEmpty ? nil : locality, country: raw["country"] as? String)
     }
 
     /// Day One stores Markdown with escaped punctuation and inline media links; Hushbook keeps plain text.

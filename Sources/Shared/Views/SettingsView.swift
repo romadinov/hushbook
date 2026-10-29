@@ -37,6 +37,14 @@ struct SettingsView: View {
                 Text("After you type the diary password, \(BiometricUnlock.kind == .none ? "biometrics" : BiometricUnlock.kindName) can unlock this device until the period ends. The device passcode never unlocks the diary, and enrolling a new face or fingerprint requires the password again. Entries and photos are encrypted with AES-256 before they are stored or synced.")
             }
 
+            Section {
+                Toggle("Add location to new entries", isOn: $store.addLocation)
+            } header: {
+                Text("Location")
+            } footer: {
+                Text("Stored encrypted inside the entry. Place names and maps come from Apple Maps, which sees the coordinates it looks up, not your entries.")
+            }
+
             Section("Appearance") {
                 Picker("Journal colour", selection: $store.journalColor) {
                     ForEach(JournalColor.allCases) { c in

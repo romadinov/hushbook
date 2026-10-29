@@ -57,6 +57,9 @@ struct EntryEditor: View {
                             .padding(.horizontal, 28)
                     }
                     voiceNotes.padding(.horizontal, 28)
+                    if let location = draft.location {
+                        LocationCard(location: location, height: 170).padding(.horizontal, 28)
+                    }
                 }
                 .padding(.bottom, 24)
             }
@@ -72,6 +75,9 @@ struct EntryEditor: View {
             photos
             voiceNotes.padding(.horizontal, 18).padding(.top, draft.audio.isEmpty ? 0 : 10)
             DiaryTextView(text: $draft.text, autofocus: autofocus && draft.text.isEmpty, onImages: add)
+            if let location = draft.location {
+                LocationRow(location: location).padding(.horizontal, 18).padding(.top, 6)
+            }
             tagBar
             #endif
         }
@@ -81,6 +87,7 @@ struct EntryEditor: View {
             Text(recordError ?? "")
         }
         .onAppear { store.editorOpened(draft.id) }
+        .task { await addLocationIfNew() }
         .onChange(of: store.finishedTranscripts.keys.map(\.uuidString).sorted()) { _, _ in
             for note in draft.audio {
                 guard let result = store.takeTranscript(note.id) else { continue }
@@ -177,6 +184,12 @@ struct EntryEditor: View {
             #if os(iOS)
             Button { showDate = true } label: { Label("Change Date", systemImage: "calendar") }
             #endif
+            if draft.location == nil {
+                Button { Task { await addCurrentLocation() } } label: { Label("Add Current Location", systemImage: "location") }
+            } else {
+                Button { draft.location = nil } label: { Label("Remove Location", systemImage: "location.slash") }
+            }
+            Divider()
             Button(role: .destructive) { confirmDelete = true } label: { Label("Delete Entry", systemImage: "trash") }
         } label: {
             Image(systemName: "ellipsis.circle")
@@ -268,6 +281,18 @@ struct EntryEditor: View {
                 }
             }
         }
+    }
+
+    /// New entries remember where they were written, as in Day One.
+    private func addLocationIfNew() async {
+        guard store.addLocation, draft.location == nil, Date.now.timeIntervalSince(draft.created) < 120 else { return }
+        await addCurrentLocation()
+    }
+
+    private func addCurrentLocation() async {
+        guard let here = await LocationProvider.shared.current() else { return }
+        let location = await EntryLocation.describe(here)
+        if draft.location == nil { draft.location = location }
     }
 
     private func startRecording() {

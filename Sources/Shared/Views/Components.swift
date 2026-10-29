@@ -105,6 +105,7 @@ struct EntryRow: View {
                 }
                 HStack(spacing: 6) {
                     Text(entry.date.formatted(date: .omitted, time: .shortened)).fixedSize()
+                    if let place = entry.location?.shortTitle { Text(place).lineLimit(1) }
                     if entry.starred { Image(systemName: "star.fill").foregroundStyle(selected ? .white : .yellow) }
                     if !entry.audio.isEmpty { Image(systemName: "waveform") }
                     if !entry.tags.isEmpty {
