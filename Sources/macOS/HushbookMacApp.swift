@@ -2,10 +2,6 @@ import SwiftUI
 import AppKit
 import UniformTypeIdentifiers
 
-extension Notification.Name {
-    static let newEntry = Notification.Name("HushbookNewEntry")
-}
-
 final class AppDelegate: NSObject, NSApplicationDelegate {
     var store: DiaryStore?
     private var observers: [NSObjectProtocol] = []
@@ -103,7 +99,7 @@ struct HushbookMacApp: App {
     var body: some Scene {
         Window("Hushbook", id: "main") {
             Group {
-                if store.phase == .unlocked { MacHome() } else { LockView() }
+                if store.phase == .unlocked { SplitHome() } else { LockView() }
             }
             .frame(minWidth: 1000, minHeight: 560)
             .tint(Theme.accent)

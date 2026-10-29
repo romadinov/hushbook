@@ -53,6 +53,7 @@ and then asks for the existing diary's password instead of creating a new diary.
 ```sh
 scripts/install-mac.sh        # → /Applications/Hushbook.app (iCloud Development)
 scripts/install-iphone.sh     # → the connected iPhone (iCloud Development)
+DEVICE=<ipad udid> scripts/install-iphone.sh   # → the iPad (same universal app; three-column layout when wide)
 scripts/sim-shots.sh <dir> list calendar media editor   # simulator screenshots with demo data
 # Mac demo window rendered to PNG (Debug build; separate data folder, never syncs):
 HUSHBOOK_DEMO=list HUSHBOOK_DATA_DIR=/tmp/demo HUSHBOOK_SNAPSHOT=/tmp/mac.png build/Build/Products/Debug/Hushbook.app/Contents/MacOS/Hushbook

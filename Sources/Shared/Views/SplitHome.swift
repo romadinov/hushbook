@@ -1,9 +1,14 @@
 import SwiftUI
 import PhotosUI
 
-/// Day One for Mac: journals and tags in the sidebar, the timeline in the middle, the entry on the right.
-struct MacHome: View {
+extension Notification.Name {
+    static let newEntry = Notification.Name("HushbookNewEntry")
+}
+
+/// Day One for Mac and iPad: journals and tags in the sidebar, the timeline in the middle, the entry on the right.
+struct SplitHome: View {
     @Environment(DiaryStore.self) private var store
+    @State private var showSettings = false
     @State private var filter: DiaryFilter? = .all
     @State private var selection: UUID?
     @State private var layout: DiaryLayout = .list
@@ -28,35 +33,52 @@ struct MacHome: View {
                     ScrollView { MediaGrid(entries: visible, columns: 4) { selection = $0.id }.padding(2) }
                 }
             }
+                        #if os(macOS)
             .frame(minWidth: 340)   // the split view alone let this column shrink to ~200 pt
             .navigationSplitViewColumnWidth(min: 340, ideal: 400, max: 560)
+            #else
+            .navigationSplitViewColumnWidth(min: 300, ideal: 360, max: 460)
+            #endif
             .navigationTitle(title)
+            #if os(macOS)
             .navigationSubtitle(subtitle)
+            #endif
             .searchable(text: $search, placement: .toolbar, prompt: "Search")
             .toolbar {
-                ToolbarItem(placement: .navigation) {
-                    Picker("View", selection: $layout) {
-                        ForEach(DiaryLayout.allCases) { Image(systemName: $0.symbol).help($0.rawValue).tag($0) }
-                    }
-                    .pickerStyle(.segmented)
-                }
+                #if os(macOS)
+                ToolbarItem(placement: .navigation) { layoutPicker }
+                #else
+                ToolbarItem(placement: .principal) { layoutPicker.fixedSize() }
+                #endif
                 ToolbarItem {
                     Button(action: newEntry) { Label("New Entry", systemImage: "plus") }
                         .help("New Entry (⌘N)")
+                        #if os(iOS)
+                        .keyboardShortcut("n")   // the Mac has this in the File menu
+                        #endif
                 }
             }
         } detail: {
             if let id = selection, let entry = store.entry(id) {
                 EntryEditor(entry: entry, autofocus: id == newEntryID) { selection = nil }
                     .id(id)
+                    #if os(macOS)
                     .navigationSplitViewColumnWidth(min: 380, ideal: 560)
+                    #endif
             } else {
                 ContentUnavailableView("No Entry Selected", systemImage: "book.closed",
                                        description: Text("Choose an entry, or press ⌘N to write a new one."))
             }
         }
+        #if os(macOS)
         .navigationSplitViewStyle(.balanced)
+        #endif
         .tint(Theme.accent)
+        #if os(iOS)
+        .sheet(isPresented: $showSettings) {
+            NavigationStack { SettingsView().toolbar { Button("Done") { showSettings = false } } }
+        }
+        #endif
         .onReceive(NotificationCenter.default.publisher(for: .newEntry)) { _ in newEntry() }
         .alert("Day One Import", isPresented: Binding(get: { store.importResult != nil }, set: { if !$0 { store.importResult = nil } })) {
             Button("OK") { store.importResult = nil }
@@ -83,6 +105,13 @@ struct MacHome: View {
                 if let toDelete { if selection == toDelete.id { selection = nil }; store.delete(toDelete) }
             }
         }
+    }
+
+    private var layoutPicker: some View {
+        Picker("View", selection: $layout) {
+            ForEach(DiaryLayout.allCases) { Image(systemName: $0.symbol).help($0.rawValue).tag($0) }
+        }
+        .pickerStyle(.segmented)
     }
 
     private var title: String {
@@ -120,7 +149,11 @@ struct MacHome: View {
                 }
             }
         }
+        #if os(macOS)
         .navigationSplitViewColumnWidth(min: 180, ideal: 210)
+        #else
+        .navigationSplitViewColumnWidth(min: 240, ideal: 260)
+        #endif
         .safeAreaInset(edge: .bottom) {
             HStack {
                 if let progress = store.importProgress {
@@ -131,8 +164,16 @@ struct MacHome: View {
                 Text(syncText).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 }
                 Spacer()
+                #if os(iOS)
+                Button { showSettings = true } label: { Image(systemName: "gearshape") }
+                    .buttonStyle(.borderless)
+                    .padding(.trailing, 8)
+                #endif
                 Button { store.lock() } label: { Image(systemName: "lock") }
                     .buttonStyle(.borderless).help("Lock (⌘L)")
+                    #if os(iOS)
+                    .keyboardShortcut("l")
+                    #endif
             }
             .padding(10)
         }
@@ -183,7 +224,9 @@ struct MacHome: View {
             .focusEffectDisabled()
             .onKeyPress(.downArrow) { move(1, proxy); return .handled }
             .onKeyPress(.upArrow) { move(-1, proxy); return .handled }
+            #if os(macOS)
             .onDeleteCommand { if let id = selection, let entry = store.entry(id) { toDelete = entry } }
+            #endif
         }
         .overlay {
             if visible.isEmpty {

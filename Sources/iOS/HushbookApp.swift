@@ -23,11 +23,18 @@ struct HushbookApp: App {
 struct RootView: View {
     @Environment(DiaryStore.self) private var store
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.horizontalSizeClass) private var sizeClass
 
     var body: some View {
         ZStack {
             Group {
-                if store.phase == .unlocked { PhoneHome() } else { LockView() }
+                if store.phase != .unlocked {
+                    LockView()
+                } else if sizeClass == .regular {
+                    SplitHome()      // iPad full screen or wide Split View: Mac-style three columns
+                } else {
+                    PhoneHome()
+                }
             }
             .tint(Theme.accent)
             .id(store.journalColor)   // Theme.accent is read when views are built
