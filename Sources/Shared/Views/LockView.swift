@@ -9,6 +9,7 @@ struct LockView: View {
     @State private var message: String?
     @State private var working = false
     @State private var shake = 0
+    @State private var autoPromptedLock = -1
     @FocusState private var focused: Field?
 
     private enum Field { case password, confirm }
@@ -44,11 +45,11 @@ struct LockView: View {
             .padding(28)
             .foregroundStyle(.white)
         }
-        .task(id: store.phase) {
-            if store.phase == .locked { await tryBiometrics() }
-        }
+        // Offer Face ID / Touch ID by itself once per lock. Not on every activation: the system's own
+        // fingerprint dialog deactivates the app, and re-prompting on return asked repeatedly.
+        .task(id: store.phase) { await autoPrompt() }
         .onChange(of: scenePhase) { _, phase in
-            if phase == .active, store.phase == .locked { Task { await tryBiometrics() } }
+            if phase == .active { Task { await autoPrompt() } }
         }
     }
 
@@ -113,6 +114,15 @@ struct LockView: View {
             .autocorrectionDisabled()
     }
 
+    private func autoPrompt() async {
+        guard store.phase == .locked, autoPromptedLock != store.lockCount, store.canUseBiometrics else { return }
+        #if os(iOS)
+        guard scenePhase == .active else { return }   // wait until the app is on screen
+        #endif
+        autoPromptedLock = store.lockCount
+        await tryBiometrics()
+    }
+
     private func tryBiometrics(userInitiated: Bool = false) async {
         guard !working else { return }
         guard store.canUseBiometrics else {
@@ -122,9 +132,6 @@ struct LockView: View {
             }
             return
         }
-        #if os(iOS)
-        guard scenePhase == .active else { return }
-        #endif
         working = true
         message = await store.unlockWithBiometrics()
         working = false

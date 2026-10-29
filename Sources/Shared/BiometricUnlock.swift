@@ -115,39 +115,35 @@ enum BiometricUnlock {
     static func unlock(reason: String) async -> Result<SymmetricKey, Failure> {
         guard canUnlock else { return .failure(.notRemembered) }
         let ctx = LAContext()
-        ctx.localizedFallbackTitle = "Enter Diary Password"
-        ctx.touchIDAuthenticationAllowableReuseDuration = 0
-        do {
-            guard try await ctx.evaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, localizedReason: reason) else {
-                return .failure(.cancelled)
-            }
-        } catch let error as LAError {
-            switch error.code {
-            case .userFallback: return .failure(.usePassword)
-            case .userCancel, .appCancel, .systemCancel: return .failure(.cancelled)
-            case .biometryLockout:
+        var availability: NSError?
+        if !ctx.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &availability) {
+            if (availability as? LAError)?.code == .biometryLockout {
                 // Re-enabling biometrics would need the passcode, which must never open the diary.
                 return .failure(.unavailable("\(kindName) is locked after too many attempts. Use the diary password."))
-            case .biometryNotEnrolled, .biometryNotAvailable:
-                forget()
-                return .failure(.unavailable("\(kindName) is not available. Use the diary password."))
-            default:
-                return .failure(.unavailable(error.localizedDescription))
             }
-        } catch {
-            return .failure(.unavailable(error.localizedDescription))
+            return .failure(.unavailable("\(kindName) isn't available right now. Use the diary password."))
         }
-
+        // One prompt: the Keychain read itself asks for the fingerprint/face. Evaluating a policy first and then
+        // reading made macOS ask twice, because the item's access control doesn't accept that earlier evaluation.
+        ctx.localizedReason = reason
+        ctx.localizedFallbackTitle = "Enter Diary Password"
         var query = baseQuery()
         query[kSecReturnData as String] = true
         query[kSecMatchLimit as String] = kSecMatchLimitOne
         query[kSecUseAuthenticationContext as String] = ctx
-        var result: CFTypeRef?
-        let status = SecItemCopyMatching(query as CFDictionary, &result)
-        guard status == errSecSuccess, let data = result as? Data, data.count == 40 else {
-            forget()   // e.g. biometrics changed since the key was stored
-            return .failure(.notRemembered)
+        let (status, result) = await Task.detached { () -> (OSStatus, Data?) in
+            var result: CFTypeRef?
+            let status = SecItemCopyMatching(query as CFDictionary, &result)
+            return (status, result as? Data)
+        }.value
+        switch status {
+        case errSecSuccess: break
+        case errSecUserCanceled: return .failure(.cancelled)
+        case errSecItemNotFound: return .failure(.notRemembered)   // removed because biometrics changed
+        case errSecAuthFailed: return .failure(.unavailable("\(kindName) didn't match. Use the diary password."))
+        default: return .failure(.unavailable((SecCopyErrorMessageString(status, nil) as String?) ?? "\(kindName) failed."))
         }
+        guard let data = result, data.count == 40 else { forget(); return .failure(.notRemembered) }
         let bits = data.suffix(8).withUnsafeBytes { $0.loadUnaligned(as: UInt64.self) }
         let until = Date(timeIntervalSince1970: Double(bitPattern: UInt64(littleEndian: bits)))
         guard until > .now else { forget(); return .failure(.expired) }

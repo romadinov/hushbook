@@ -130,8 +130,12 @@ final class DiaryStore {
         Task { await sync.syncNow() }
     }
 
+    /// Counts lock events, so the lock screen offers Face ID / Touch ID automatically once per lock.
+    private(set) var lockCount = 0
+
     func lock() {
         guard phase == .unlocked else { return }
+        lockCount += 1
         lockTask?.cancel()
         key = nil
         entries = []
