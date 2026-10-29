@@ -113,6 +113,12 @@ final class DiaryStore {
     func unlockWithBiometrics() async -> String? {
         switch await BiometricUnlock.unlock(reason: "Unlock your diary") {
         case .success(let key):
+            // The remembered key must open this diary. A key for another diary (e.g. one created on this Mac by a
+            // test run) would show an empty diary and seal new entries with the wrong key.
+            guard opensDiary(key) else {
+                BiometricUnlock.forget()
+                return "\(BiometricUnlock.kindName) had a key that doesn't open this diary. Enter your password once to set it up again."
+            }
             didUnlock(key, fromPassword: false)
             return nil
         case .failure(.expired):
@@ -124,10 +130,17 @@ final class DiaryStore {
         }
     }
 
+    /// True if the key decrypts a few of the stored entries (or there are none yet to check).
+    private func opensDiary(_ key: SymmetricKey) -> Bool {
+        let sample = local.allEnvelopes().prefix(5)
+        return sample.isEmpty || sample.contains { decrypt($0.value, id: $0.key, key: key) != nil }
+    }
+
     private func didUnlock(_ key: SymmetricKey, fromPassword: Bool) {
         self.key = key
         // Only typing the password starts a new remember window; Face ID / Touch ID never extends it.
-        if fromPassword && useBiometrics {
+        // Debug runs on a test data folder never touch the Keychain: its item is shared with the real diary.
+        if fromPassword && useBiometrics && !Self.usesTestFolder {
             BiometricUnlock.remember(key, until: Date.now.addingTimeInterval(Double(rememberDays) * 86_400))
         }
         reloadAll()
@@ -162,7 +175,9 @@ final class DiaryStore {
         else { return false }
         local.saveVault(newHeader)
         sync.enqueueSave(RecordName.vault)
-        if useBiometrics { BiometricUnlock.remember(key, until: Date.now.addingTimeInterval(Double(rememberDays) * 86_400)) }
+        if useBiometrics && !Self.usesTestFolder {
+            BiometricUnlock.remember(key, until: Date.now.addingTimeInterval(Double(rememberDays) * 86_400))
+        }
         return true
     }
 
@@ -490,6 +505,14 @@ final class DiaryStore {
 }
 
 extension DiaryStore {
+    static var usesTestFolder: Bool {
+        #if DEBUG
+        ProcessInfo.processInfo.environment["HUSHBOOK_DATA_DIR"] != nil
+        #else
+        false
+        #endif
+    }
+
     static var demoScreen: String? {
         #if DEBUG
         demoMode
