@@ -19,10 +19,10 @@ A private, encrypted diary for Mac and iPhone, styled after Day One, synced thro
   iCloud Keychain: the device passcode opens those.
 - Photos are re-encoded as JPEG, which drops EXIF/GPS metadata.
 
-## Quick Note (no password, no Face ID / Touch ID)
+## Quick Hashnote (no password, no Face ID / Touch ID)
 
-Write a note without unlocking: the Mac menu bar item (✎), the **Quick Note** button on the lock screen, the iPhone/iPad
-Home Screen quick action (touch and hold the icon), or the "Quick Note" App Shortcut (Action button, Control Center, Siri).
+Write a note without unlocking: the Mac menu bar item (✎), the **Quick Hashnote** button on the lock screen, the iPhone/iPad
+Home Screen quick action (touch and hold the icon), or the "Quick Hashnote" App Shortcut (Action button, Control Center, Siri).
 
 It is write-only. A Curve25519 drop box key pair is derived from the diary key (HKDF), so every device has the same
 one; only the public half (`dropbox.pub`) is on disk, refreshed at every unlock. Each note (text, photos, location) is

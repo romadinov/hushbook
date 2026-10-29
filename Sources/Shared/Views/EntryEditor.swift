@@ -28,6 +28,7 @@ struct EntryEditor: View {
     @State private var recorder = VoiceRecorder()
     @State private var addedAudio: Set<UUID> = []
     @State private var recordError: String?
+    @State private var scrollHeight: CGFloat = 0
     @FocusState private var tagFocused: Bool
 
     init(entry: Entry, autofocus: Bool = false, onDelete: @escaping () -> Void = {}) {
@@ -60,12 +61,16 @@ struct EntryEditor: View {
                             .padding(.horizontal, 28)
                     }
                     voiceNotes.padding(.horizontal, 28)
+                    // The map sits at the bottom of the screen, not under the text, leaving room to write.
+                    Spacer(minLength: 0)
                     if let location = draft.location {
-                        LocationCard(location: location, height: 170).padding(.horizontal, 28)
+                        LocationCard(location: location, height: 85).padding(.horizontal, 28)
                     }
                 }
                 .padding(.bottom, 24)
+                .frame(minHeight: scrollHeight, alignment: .top)
             }
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { scrollHeight = $0 }
             if recorder.isRecording {
                 RecordingBar(recorder: recorder, onStop: stopRecording, onCancel: recorder.cancel)
             }
@@ -86,12 +91,16 @@ struct EntryEditor: View {
                             .padding(.horizontal, 18)
                     }
                     voiceNotes.padding(.horizontal, 18)
+                    // The map sits at the bottom of the screen, not under the text, leaving room to write.
+                    Spacer(minLength: 0)
                     if let location = draft.location {
-                        LocationCard(location: location, height: 130).padding(.horizontal, 18)
+                        LocationCard(location: location, height: 65).padding(.horizontal, 18)
                     }
                 }
                 .padding(.bottom, 16)
+                .frame(minHeight: scrollHeight, alignment: .top)
             }
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { scrollHeight = $0 }
             .scrollDismissesKeyboard(.interactively)
             tagBar
             #endif

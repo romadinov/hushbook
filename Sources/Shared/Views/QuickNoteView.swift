@@ -87,7 +87,7 @@ struct QuickNoteView: View {
         HStack {
             Button(saved ? "Done" : "Cancel") { close() }
             Spacer()
-            Label("Quick Note", systemImage: "lock.fill").font(.headline).labelStyle(.titleAndIcon)
+            Label("Quick Hashnote", systemImage: "lock.fill").font(.headline).labelStyle(.titleAndIcon)
             Spacer()
             if saved {
                 Button("New Note") { saved = false }

@@ -38,7 +38,7 @@
 			<key>UIApplicationShortcutItemSubtitle</key>
 			<string>Without unlocking</string>
 			<key>UIApplicationShortcutItemTitle</key>
-			<string>Quick Note</string>
+			<string>Quick Hashnote</string>
 			<key>UIApplicationShortcutItemType</key>
 			<string>com.romadinov.hushbook.quicknote</string>
 		</dict>

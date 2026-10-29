@@ -143,7 +143,7 @@ struct HushbookMacApp: App {
         }
 
         // The mini app: write a note from the menu bar without unlocking.
-        MenuBarExtra("Hushbook Quick Note", systemImage: "square.and.pencil", isInserted: $quickNoteInMenuBar) {
+        MenuBarExtra("Quick Hashnote", systemImage: "square.and.pencil", isInserted: $quickNoteInMenuBar) {
             QuickNoteView { NSApp.keyWindow?.close() }
                 .frame(width: 420, height: 360)
                 .environment(store)

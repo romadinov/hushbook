@@ -82,7 +82,7 @@ struct LockView: View {
             }
             if working { ProgressView().tint(.white) }
             Button { QuickNoteDraft.shared.isPresented = true } label: {
-                Label("Quick Note", systemImage: "square.and.pencil").font(.callout.weight(.semibold))
+                Label("Quick Hashnote", systemImage: "square.and.pencil").font(.callout.weight(.semibold))
             }
             .buttonStyle(.plain)
             .padding(.top, 18)

@@ -40,15 +40,15 @@ struct SettingsView: View {
 
             Section {
                 #if os(macOS)
-                Toggle("Show Quick Note in the menu bar", isOn: $quickNoteInMenuBar)
+                Toggle("Show Quick Hashnote in the menu bar", isOn: $quickNoteInMenuBar)
                 #endif
             } header: {
-                Text("Quick Note")
+                Text("Quick Hashnote")
             } footer: {
                 #if os(macOS)
                 Text("Write a note without unlocking, from the menu bar or the lock screen. It is sealed so that only the unlocked diary can read it; the quick note window never shows anything, not even notes written there.")
                 #else
-                Text("Write a note without unlocking: touch and hold the Hushbook icon, use the button on the lock screen, or add \"Quick Note\" to the Action button or Control Center in Shortcuts. Only the unlocked diary can read it; the quick note window never shows anything, not even notes written there.")
+                Text("Write a note without unlocking: touch and hold the Hushbook icon, use the button on the lock screen, or add \"Quick Hashnote\" to the Action button or Control Center in Shortcuts. Only the unlocked diary can read it; the quick note window never shows anything, not even notes written there.")
                 #endif
             }
 

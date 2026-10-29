@@ -1,9 +1,9 @@
 import AppIntents
 
-/// "Quick Note" for Shortcuts, Siri, Spotlight, Control Center and the Action button: opens the quick note sheet,
+/// "Quick Hashnote" for Shortcuts, Siri, Spotlight, Control Center and the Action button: opens the quick note sheet,
 /// which works without unlocking the diary.
 struct QuickNoteIntent: AppIntent {
-    static let title: LocalizedStringResource = "Quick Note"
+    static let title: LocalizedStringResource = "Quick Hashnote"
     static let description = IntentDescription("Write a diary note without unlocking. It can be read only after unlocking Hushbook.")
     static let supportedModes: IntentModes = .foreground
 
@@ -15,7 +15,7 @@ struct QuickNoteIntent: AppIntent {
 
 struct HushbookShortcuts: AppShortcutsProvider {
     static var appShortcuts: [AppShortcut] {
-        AppShortcut(intent: QuickNoteIntent(), phrases: ["Quick note in \(.applicationName)", "New \(.applicationName) note"],
-                    shortTitle: "Quick Note", systemImageName: "square.and.pencil")
+        AppShortcut(intent: QuickNoteIntent(), phrases: ["Quick Hashnote in \(.applicationName)", "New \(.applicationName) note"],
+                    shortTitle: "Quick Hashnote", systemImageName: "square.and.pencil")
     }
 }
