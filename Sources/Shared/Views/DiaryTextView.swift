@@ -41,6 +41,19 @@ private enum Style {
         [.font: atTitle ? title : body, .foregroundColor: color, .paragraphStyle: paragraph]
     }
 
+    static let placeholder = "Start writing…"
+
+    /// Same font and paragraph style as the title line, so the caret sits exactly at the placeholder's start.
+    static var placeholderAttributes: [NSAttributedString.Key: Any] {
+        var attrs = typingAttributes(atTitle: true)
+        #if os(iOS)
+        attrs[.foregroundColor] = UIColor.placeholderText
+        #else
+        attrs[.foregroundColor] = NSColor.placeholderTextColor
+        #endif
+        return attrs
+    }
+
     static func cursorInTitle(_ text: String, _ location: Int) -> Bool {
         let ns = text as NSString
         let first = ns.paragraphRange(for: NSRange(location: 0, length: 0))
@@ -86,6 +99,7 @@ extension DiaryTextView: UIViewRepresentable {
         if tv.text != text {
             tv.text = text
             Style.apply(to: tv.textStorage)
+            tv.updatePlaceholder()
         }
     }
 
@@ -100,6 +114,7 @@ extension DiaryTextView: UIViewRepresentable {
                 tv.selectedRange = selection
             }
             parent.text = tv.text
+            (tv as? PasteTextView)?.updatePlaceholder()
         }
 
         func textViewDidChangeSelection(_ tv: UITextView) {
@@ -110,6 +125,26 @@ extension DiaryTextView: UIViewRepresentable {
 
 final class PasteTextView: UITextView {
     var onImages: (([Data]) -> Void)?
+    private let placeholderLabel = UILabel()
+
+    override init(frame: CGRect, textContainer: NSTextContainer?) {
+        super.init(frame: frame, textContainer: textContainer)
+        placeholderLabel.attributedText = NSAttributedString(string: Style.placeholder, attributes: Style.placeholderAttributes)
+        placeholderLabel.isUserInteractionEnabled = false
+        addSubview(placeholderLabel)
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+
+    func updatePlaceholder() { placeholderLabel.isHidden = !text.isEmpty }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        let x = textContainerInset.left + textContainer.lineFragmentPadding
+        let size = placeholderLabel.sizeThatFits(CGSize(width: bounds.width - x - textContainerInset.right, height: .greatestFiniteMagnitude))
+        placeholderLabel.frame = CGRect(origin: CGPoint(x: x, y: textContainerInset.top), size: size)
+        updatePlaceholder()
+    }
 
     private var pastedImages: [Data] {
         let pb = UIPasteboard.general
@@ -193,6 +228,19 @@ extension DiaryTextView: NSViewRepresentable {
 
 final class PasteNSTextView: NSTextView {
     var onImages: (([Data]) -> Void)?
+
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+        guard string.isEmpty else { return }
+        let x = textContainerOrigin.x + (textContainer?.lineFragmentPadding ?? 0)
+        let rect = NSRect(x: x, y: textContainerOrigin.y, width: bounds.width - x - textContainerInset.width, height: 60)
+        NSAttributedString(string: Style.placeholder, attributes: Style.placeholderAttributes).draw(in: rect)
+    }
+
+    override func didChangeText() {
+        super.didChangeText()
+        needsDisplay = true
+    }
 
     private static let imageTypes: [NSPasteboard.PasteboardType] = [.png, .tiff, .init(UTType.jpeg.identifier), .init(UTType.heic.identifier)]
 

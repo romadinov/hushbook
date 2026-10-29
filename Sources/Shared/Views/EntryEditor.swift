@@ -37,20 +37,7 @@ struct EntryEditor: View {
             Divider()
             #endif
             photos
-            ZStack(alignment: .topLeading) {
-                DiaryTextView(text: $draft.text, autofocus: autofocus && draft.text.isEmpty, onImages: add)
-                if draft.text.isEmpty {
-                    Text("Start writing…")
-                        .font(.title2.bold())
-                        .foregroundStyle(.tertiary)
-                        #if os(iOS)
-                        .padding(.top, 16).padding(.leading, 18)
-                        #else
-                        .padding(.top, 18).padding(.leading, 28)
-                        #endif
-                        .allowsHitTesting(false)
-                }
-            }
+            DiaryTextView(text: $draft.text, autofocus: autofocus && draft.text.isEmpty, onImages: add)
             tagBar
         }
         #if os(iOS)

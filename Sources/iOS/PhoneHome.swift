@@ -41,7 +41,10 @@ struct PhoneHome: View {
             }
         }
         .tint(Theme.blue)
-        .task { if DiaryStore.demoScreen == "editor", let e = store.saved.first { path = [.entry(e.id, isNew: false)] } }
+        .task {
+            if DiaryStore.demoScreen == "editor", let e = store.saved.first { path = [.entry(e.id, isNew: false)] }
+            if DiaryStore.demoScreen == "new" { newEntry() }
+        }
         .sheet(isPresented: $showSettings) { NavigationStack { SettingsView().toolbar { Button("Done") { showSettings = false } } } }
         .photosPicker(isPresented: $showPicker, selection: $pickerItems, maxSelectionCount: 20, matching: .images)
         .onChange(of: pickerItems) { _, items in
