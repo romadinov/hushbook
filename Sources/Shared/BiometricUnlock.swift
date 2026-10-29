@@ -70,6 +70,22 @@ enum BiometricUnlock {
         return SecItemAdd(query as CFDictionary, nil) == errSecSuccess
     }
 
+    /// Diagnostic: stores and removes a throwaway item with the same protection. Returns the SecItemAdd status.
+    static func selfTest() -> (kind: Kind, status: OSStatus) {
+        guard let access = SecAccessControlCreateWithFlags(nil, kSecAttrAccessibleWhenPasscodeSetThisDeviceOnly,
+                                                           .biometryCurrentSet, nil) else { return (kind, -1) }
+        var query = baseQuery()
+        query[kSecAttrAccount as String] = "self-test"
+        SecItemDelete(query as CFDictionary)
+        query[kSecValueData as String] = Data([1])
+        query[kSecAttrAccessControl as String] = access
+        let status = SecItemAdd(query as CFDictionary, nil)
+        query.removeValue(forKey: kSecValueData as String)
+        query.removeValue(forKey: kSecAttrAccessControl as String)
+        SecItemDelete(query as CFDictionary)
+        return (kind, status)
+    }
+
     static func forget() {
         SecItemDelete(baseQuery() as CFDictionary)
     }
@@ -79,9 +95,8 @@ enum BiometricUnlock {
         var query = baseQuery()
         query[kSecReturnAttributes as String] = true
         query[kSecMatchLimit as String] = kSecMatchLimitOne
-        let ctx = LAContext()
-        ctx.interactionNotAllowed = true
-        query[kSecUseAuthenticationContext as String] = ctx
+        // Attributes never need authentication. Don't pass an `interactionNotAllowed` context here: macOS then
+        // refuses the lookup with errSecInteractionNotAllowed and the remembered key looks absent.
         var result: CFTypeRef?
         guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
               let attrs = result as? [String: Any] else { return nil }

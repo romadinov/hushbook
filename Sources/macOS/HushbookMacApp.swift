@@ -11,6 +11,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var observers: [NSObjectProtocol] = []
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        if CommandLine.arguments.contains("--keychain-selftest") {
+            let result = BiometricUnlock.selfTest()
+            print("biometry: \(result.kind) remembered: \(BiometricUnlock.rememberedUntil.map { "\($0)" } ?? "none") SecItemAdd: \(result.status) \(SecCopyErrorMessageString(result.status, nil) as String? ?? "")")
+            exit(0)
+        }
         NSApplication.shared.registerForRemoteNotifications()
         // Lock straight away when the Mac sleeps, the screen locks or another user takes over.
         let ws = NSWorkspace.shared.notificationCenter

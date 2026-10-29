@@ -9,7 +9,9 @@ struct LockView: View {
     @State private var message: String?
     @State private var working = false
     @State private var shake = 0
-    @FocusState private var focused: Bool
+    @FocusState private var focused: Field?
+
+    private enum Field { case password, confirm }
 
     var body: some View {
         ZStack {
@@ -53,7 +55,7 @@ struct LockView: View {
     private var unlock: some View {
         VStack(spacing: 14) {
             Text("Your diary is locked.").font(.callout).opacity(0.85)
-            field("Diary password", text: $password)
+            field("Diary password", text: $password, focus: .password)
                 .onSubmit { Task { await submitUnlock() } }
                 .modifier(Shake(animatableData: CGFloat(shake)))
             Button { Task { await submitUnlock() } } label: {
@@ -61,8 +63,8 @@ struct LockView: View {
             }
             .buttonStyle(PrimaryButton())
             .disabled(password.isEmpty || working)
-            if store.canUseBiometrics {
-                Button { Task { await tryBiometrics() } } label: {
+            if store.useBiometrics && BiometricUnlock.kind != .none {
+                Button { Task { await tryBiometrics(userInitiated: true) } } label: {
                     Label("Unlock with \(BiometricUnlock.kindName)", systemImage: BiometricUnlock.symbol)
                 }
                 .buttonStyle(.plain)
@@ -71,15 +73,16 @@ struct LockView: View {
             }
             if working { ProgressView().tint(.white) }
         }
-        .onAppear { if !store.canUseBiometrics { focused = true } }
+        .onAppear { if !store.canUseBiometrics { focused = .password } }
     }
 
     private var setup: some View {
         VStack(spacing: 14) {
             Text("Choose a diary password. It's separate from your device passcode, which can never open this diary.")
                 .font(.callout).multilineTextAlignment(.center).opacity(0.9)
-            field("New password", text: $password)
-            field("Repeat password", text: $confirm)
+            field("New password", text: $password, focus: .password)
+                .onSubmit { focused = .confirm }
+            field("Repeat password", text: $confirm, focus: .confirm)
                 .onSubmit { Task { await submitSetup() } }
             Button { Task { await submitSetup() } } label: {
                 Text("Create Diary").frame(maxWidth: .infinity)
@@ -92,12 +95,14 @@ struct LockView: View {
                 .buttonStyle(.plain).font(.footnote.weight(.semibold))
             if working { ProgressView().tint(.white) }
         }
+        .onAppear { focused = .password }
     }
 
-    private func field(_ title: String, text: Binding<String>) -> some View {
+    private func field(_ title: String, text: Binding<String>, focus: Field) -> some View {
         SecureField(title, text: text, prompt: Text(title).foregroundStyle(.white.opacity(0.6)))
             .textFieldStyle(.plain)
-            .focused($focused)
+            .focused($focused, equals: focus)
+            .tint(.white)   // the caret takes the tint; the default blue vanishes on the blue background
             .padding(12)
             .background(.white.opacity(0.18), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             // Not .password: the system would offer to save it in Passwords, which the device passcode opens.
@@ -108,15 +113,22 @@ struct LockView: View {
             .autocorrectionDisabled()
     }
 
-    private func tryBiometrics() async {
-        guard store.canUseBiometrics, !working else { return }
+    private func tryBiometrics(userInitiated: Bool = false) async {
+        guard !working else { return }
+        guard store.canUseBiometrics else {
+            if userInitiated {
+                message = "Enter your password once. After that, \(BiometricUnlock.kindName) unlocks Hushbook for \(store.rememberDays) day\(store.rememberDays == 1 ? "" : "s")."
+                focused = .password
+            }
+            return
+        }
         #if os(iOS)
         guard scenePhase == .active else { return }
         #endif
         working = true
         message = await store.unlockWithBiometrics()
         working = false
-        if store.phase == .locked { focused = true }
+        if store.phase == .locked { focused = .password }
     }
 
     private func submitUnlock() async {
@@ -128,7 +140,7 @@ struct LockView: View {
         if ok { message = nil } else {
             message = "Wrong password."
             withAnimation(.default) { shake += 1 }
-            focused = true
+            focused = .password
         }
     }
 

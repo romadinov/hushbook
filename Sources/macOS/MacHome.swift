@@ -28,7 +28,7 @@ struct MacHome: View {
                     ScrollView { MediaGrid(entries: visible, columns: 4) { selection = $0.id }.padding(2) }
                 }
             }
-            .navigationSplitViewColumnWidth(min: 300, ideal: 380)
+            .navigationSplitViewColumnWidth(min: 320, ideal: 400)
             .navigationTitle(title)
             .navigationSubtitle(subtitle)
             .searchable(text: $search, placement: .toolbar, prompt: "Search")

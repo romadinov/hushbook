@@ -46,6 +46,16 @@ struct EntryRow: View {
     var showDate = true
 
     var body: some View {
+        // In a narrow column the photo goes first, so the text never squeezes into a sliver.
+        ViewThatFits(in: .horizontal) {
+            row(withPhoto: true)
+            row(withPhoto: false)
+        }
+        .padding(.vertical, 6)
+        .contentShape(Rectangle())
+    }
+
+    private func row(withPhoto: Bool) -> some View {
         HStack(alignment: .top, spacing: 12) {
             DateColumn(date: entry.date, visible: showDate)
             VStack(alignment: .leading, spacing: 3) {
@@ -60,7 +70,7 @@ struct EntryRow: View {
                     }
                 }
                 HStack(spacing: 6) {
-                    Text(entry.date.formatted(date: .omitted, time: .shortened))
+                    Text(entry.date.formatted(date: .omitted, time: .shortened)).fixedSize()
                     if entry.starred { Image(systemName: "star.fill").foregroundStyle(.yellow) }
                     if !entry.tags.isEmpty {
                         Text(entry.tags.map { "#\($0)" }.joined(separator: " ")).foregroundStyle(Theme.blue).lineLimit(1)
@@ -68,15 +78,15 @@ struct EntryRow: View {
                 }
                 .font(.caption)
                 .foregroundStyle(.tertiary)
+                .lineLimit(1)
                 .padding(.top, 2)
             }
-            Spacer(minLength: 0)
-            if let first = entry.photoIDs.first {
+            .frame(minWidth: 150, maxWidth: .infinity, alignment: .leading)
+            .layoutPriority(1)
+            if withPhoto, let first = entry.photoIDs.first {
                 PhotoThumb(id: first, side: 68)
             }
         }
-        .padding(.vertical, 6)
-        .contentShape(Rectangle())
     }
 }
 
