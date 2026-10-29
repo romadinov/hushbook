@@ -1,0 +1,333 @@
+import SwiftUI
+import PhotosUI
+import UniformTypeIdentifiers
+
+struct PhotoRef: Identifiable { let id: UUID }
+
+/// Writing and reading are the same screen, as in Day One. Saves as you type; an entry left empty is discarded.
+struct EntryEditor: View {
+    @Environment(DiaryStore.self) private var store
+    @Environment(\.dismiss) private var dismiss
+    var autofocus = false
+    var onDelete: () -> Void = {}
+
+    @State private var draft: Entry
+    @State private var addedPhotos: Set<UUID> = []
+    @State private var pickerItems: [PhotosPickerItem] = []
+    @State private var showCamera = false
+    @State private var showDate = false
+    @State private var confirmDelete = false
+    @State private var deleted = false
+    @State private var viewing: PhotoRef?
+    @State private var newTag = ""
+    @State private var saveTask: Task<Void, Never>?
+    @State private var addingPhotos = 0
+    @FocusState private var tagFocused: Bool
+
+    init(entry: Entry, autofocus: Bool = false, onDelete: @escaping () -> Void = {}) {
+        _draft = State(initialValue: entry)
+        self.autofocus = autofocus
+        self.onDelete = onDelete
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            #if os(macOS)
+            actionBar
+            Divider()
+            #endif
+            photos
+            ZStack(alignment: .topLeading) {
+                DiaryTextView(text: $draft.text, autofocus: autofocus && draft.text.isEmpty, onImages: add)
+                if draft.text.isEmpty {
+                    Text("Start writing…")
+                        .font(.title2.bold())
+                        .foregroundStyle(.tertiary)
+                        #if os(iOS)
+                        .padding(.top, 16).padding(.leading, 18)
+                        #else
+                        .padding(.top, 18).padding(.leading, 28)
+                        #endif
+                        .allowsHitTesting(false)
+                }
+            }
+            tagBar
+        }
+        #if os(iOS)
+        .navigationTitle(draft.date.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated).year()))
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                starButton
+                moreMenu
+            }
+        }
+        .safeAreaInset(edge: .bottom) { actionBar.background(.bar) }
+        .fullScreenCover(isPresented: $showCamera) {
+            CameraPicker { if let data = $0.jpegData(compressionQuality: 0.95) { add([data]) } }.ignoresSafeArea()
+        }
+        .fullScreenCover(item: $viewing) { PhotoViewer(id: $0.id) }
+        #else
+        .sheet(item: $viewing) { PhotoViewer(id: $0.id) }
+        .background(Color(nsColor: .textBackgroundColor))
+        #endif
+        .onChange(of: pickerItems) { _, items in
+            guard !items.isEmpty else { return }
+            pickerItems = []
+            Task {
+                for item in items {
+                    if let data = try? await item.loadTransferable(type: Data.self) { add([data]) }
+                }
+            }
+        }
+        .onChange(of: draft) { _, _ in scheduleSave() }
+        .onDisappear {
+            saveTask?.cancel()
+            guard !deleted else { return }
+            store.save(draft)
+            store.discardIfEmpty(draft.id)
+        }
+        .confirmationDialog("Delete this entry?", isPresented: $confirmDelete, titleVisibility: .visible) {
+            Button("Delete Entry", role: .destructive) {
+                deleted = true
+                store.delete(draft)
+                onDelete()
+                dismiss()
+            }
+        } message: {
+            Text("It will be deleted on all your devices.")
+        }
+    }
+
+    // MARK: Pieces
+
+    private var dateLabel: some View {
+        Button { showDate = true } label: {
+            HStack(spacing: 6) {
+                Text(draft.date.formatted(.dateTime.weekday(.wide).day().month(.wide).year()))
+                    .fontWeight(.semibold)
+                Text(draft.date.formatted(date: .omitted, time: .shortened)).foregroundStyle(.secondary)
+            }
+        }
+        .buttonStyle(.plain)
+        .popover(isPresented: $showDate) {
+            VStack {
+                DatePicker("Entry date", selection: $draft.date).datePickerStyle(.graphical).labelsHidden()
+                Button("Now") { draft.date = .now }
+            }
+            .padding()
+            .frame(minWidth: 320)
+            .presentationCompactAdaptation(.popover)
+        }
+    }
+
+    private var starButton: some View {
+        Button { draft.starred.toggle() } label: {
+            Image(systemName: draft.starred ? "star.fill" : "star")
+                .foregroundStyle(draft.starred ? .yellow : .secondary)
+        }
+        .help(draft.starred ? "Unstar" : "Star")
+    }
+
+    private var moreMenu: some View {
+        Menu {
+            #if os(iOS)
+            Button { showDate = true } label: { Label("Change Date", systemImage: "calendar") }
+            #endif
+            Button(role: .destructive) { confirmDelete = true } label: { Label("Delete Entry", systemImage: "trash") }
+        } label: {
+            Image(systemName: "ellipsis.circle")
+        }
+        #if os(macOS)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        #endif
+    }
+
+    private var actionBar: some View {
+        HStack(spacing: 22) {
+            #if os(macOS)
+            dateLabel
+            Spacer()
+            #endif
+            PhotosPicker(selection: $pickerItems, maxSelectionCount: 20, matching: .images) {
+                Image(systemName: "photo.on.rectangle.angled")
+            }
+            .help("Add photos from your library")
+            #if os(iOS)
+            if UIImagePickerController.isSourceTypeAvailable(.camera) {
+                Button { showCamera = true } label: { Image(systemName: "camera") }
+            }
+            PasteButton(supportedContentTypes: [.image]) { providers in
+                for p in providers {
+                    _ = p.loadDataRepresentation(for: .image) { data, _ in
+                        if let data { Task { @MainActor in add([data]) } }
+                    }
+                }
+            }
+            .labelStyle(.iconOnly)
+            .buttonBorderShape(.capsule)
+            .controlSize(.small)
+            #endif
+            Button { tagFocused = true } label: { Image(systemName: "number") }
+                .help("Add a tag")
+            #if os(iOS)
+            Button { showDate = true } label: { Image(systemName: "calendar") }
+            Spacer()
+            if addingPhotos > 0 { ProgressView() }
+            Text("\(wordCount) words").font(.caption).foregroundStyle(.secondary)
+            #else
+            if addingPhotos > 0 { ProgressView().controlSize(.small) }
+            starButton
+            moreMenu
+            #endif
+        }
+        .font(.title3)
+        .buttonStyle(.borderless)
+        .tint(Theme.blue)
+        .padding(.horizontal, 18)
+        .padding(.vertical, 10)
+        #if os(iOS)
+        .overlay(alignment: .top) { Divider() }
+        #endif
+    }
+
+    @ViewBuilder private var photos: some View {
+        if draft.photoIDs.count == 1, let id = draft.photoIDs.first {
+            PhotoThumb(id: id, cornerRadius: 0, maxPixel: 1600)
+                .frame(height: 260)
+                .frame(maxWidth: .infinity)
+                .clipped()
+                .onTapGesture { viewing = PhotoRef(id: id) }
+                .contextMenu { photoMenu(id) }
+        } else if !draft.photoIDs.isEmpty {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(draft.photoIDs, id: \.self) { id in
+                        PhotoThumb(id: id, side: 130, cornerRadius: 10)
+                            .onTapGesture { viewing = PhotoRef(id: id) }
+                            .contextMenu { photoMenu(id) }
+                    }
+                }
+                .padding(.horizontal, 18)
+                .padding(.vertical, 12)
+            }
+        }
+    }
+
+    @ViewBuilder private func photoMenu(_ id: UUID) -> some View {
+        Button { viewing = PhotoRef(id: id) } label: { Label("View", systemImage: "arrow.up.left.and.arrow.down.right") }
+        Button(role: .destructive) { removePhoto(id) } label: { Label("Remove Photo", systemImage: "trash") }
+    }
+
+    private var tagBar: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    ForEach(draft.tags, id: \.self) { tag in
+                        TagChip(tag: tag) { draft.tags.removeAll { $0 == tag } }
+                    }
+                    TextField("Add tag", text: $newTag)
+                        .textFieldStyle(.plain)
+                        .focused($tagFocused)
+                        .frame(width: 140)
+                        .onSubmit(addTag)
+                        .autocorrectionDisabled()
+                        #if os(iOS)
+                        .textInputAutocapitalization(.never)
+                        #endif
+                }
+                .padding(.horizontal, 18)
+            }
+            let suggestions = tagSuggestions
+            if !suggestions.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        ForEach(suggestions, id: \.self) { tag in
+                            Button { newTag = tag; addTag() } label: { TagChip(tag: tag).opacity(0.7) }
+                                .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.horizontal, 18)
+                }
+            }
+        }
+        .padding(.vertical, 10)
+    }
+
+    // MARK: Actions
+
+    private var tagSuggestions: [String] {
+        guard tagFocused else { return [] }
+        let q = newTag.trimmingCharacters(in: CharacterSet(charactersIn: "# "))
+        return store.allTags.map(\.name)
+            .filter { !draft.tags.contains($0) && (q.isEmpty || $0.localizedCaseInsensitiveContains(q)) }
+            .prefix(12).map { $0 }
+    }
+
+    private var wordCount: Int { draft.text.split { $0.isWhitespace || $0.isNewline }.count }
+
+    private func addTag() {
+        let tag = newTag.trimmingCharacters(in: CharacterSet(charactersIn: "#").union(.whitespacesAndNewlines))
+        newTag = ""
+        guard !tag.isEmpty, !draft.tags.contains(tag) else { return }
+        draft.tags.append(tag)
+    }
+
+    private func add(_ images: [Data]) {
+        addingPhotos += images.count
+        Task {
+            for data in images {
+                if let id = await store.addPhoto(data) {
+                    draft.photoIDs.append(id)
+                    addedPhotos.insert(id)
+                }
+                addingPhotos -= 1
+            }
+        }
+    }
+
+    private func removePhoto(_ id: UUID) {
+        draft.photoIDs.removeAll { $0 == id }
+        if addedPhotos.remove(id) != nil { store.deletePhoto(id) }   // saved photos are removed when the entry saves
+    }
+
+    private func scheduleSave() {
+        saveTask?.cancel()
+        let snapshot = draft
+        saveTask = Task {
+            try? await Task.sleep(for: .milliseconds(600))
+            guard !Task.isCancelled, !deleted else { return }
+            store.save(snapshot)
+        }
+    }
+}
+
+#if os(iOS)
+struct CameraPicker: UIViewControllerRepresentable {
+    let onImage: (UIImage) -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    func makeUIViewController(context: Context) -> UIImagePickerController {
+        let picker = UIImagePickerController()
+        picker.sourceType = .camera
+        picker.delegate = context.coordinator
+        return picker
+    }
+
+    func updateUIViewController(_ controller: UIImagePickerController, context: Context) {}
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+    final class Coordinator: NSObject, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
+        let parent: CameraPicker
+        init(_ parent: CameraPicker) { self.parent = parent }
+
+        func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey: Any]) {
+            if let image = info[.originalImage] as? UIImage { parent.onImage(image) }
+            parent.dismiss()
+        }
+
+        func imagePickerControllerDidCancel(_ picker: UIImagePickerController) { parent.dismiss() }
+    }
+}
+#endif

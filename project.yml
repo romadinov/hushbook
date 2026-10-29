@@ -1,0 +1,77 @@
+name: Hushbook
+options:
+  bundleIdPrefix: com.romadinov
+  deploymentTarget:
+    iOS: "18.0"
+    macOS: "15.0"
+  createIntermediateGroups: true
+  developmentLanguage: en
+settings:
+  base:
+    DEVELOPMENT_TEAM: SZVSSCJQFN
+    CODE_SIGN_STYLE: Automatic
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "1.0.0"
+    CURRENT_PROJECT_VERSION: "1"
+    GENERATE_INFOPLIST_FILE: YES
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+    ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+    ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+targets:
+  HushbookMac:
+    type: application
+    platform: macOS
+    sources:
+      - Sources/Shared
+      - Sources/macOS
+      - path: Resources/Assets.xcassets
+    settings:
+      base:
+        PRODUCT_NAME: Hushbook
+        PRODUCT_BUNDLE_IDENTIFIER: com.romadinov.hushbook.mac
+        INFOPLIST_KEY_CFBundleDisplayName: Hushbook
+        INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.lifestyle
+        INFOPLIST_KEY_NSHumanReadableCopyright: ""
+        CODE_SIGN_ENTITLEMENTS: Sources/macOS/Hushbook.entitlements
+        ENABLE_HARDENED_RUNTIME: YES
+        ENABLE_APP_SANDBOX: NO
+      configs:
+        Release:
+          CODE_SIGN_ENTITLEMENTS: Sources/macOS/Hushbook-Release.entitlements
+  HushbookIOS:
+    type: application
+    platform: iOS
+    sources:
+      - Sources/Shared
+      - Sources/iOS
+      - path: Resources/Assets.xcassets
+    info:
+      path: Sources/iOS/Info.plist
+      properties:
+        CFBundleDisplayName: Hushbook
+        UILaunchScreen: {}
+        UIBackgroundModes: [remote-notification]
+        NSFaceIDUsageDescription: Face ID unlocks your diary after you have entered its password.
+        NSCameraUsageDescription: Take photos for your diary entries.
+        NSPhotoLibraryUsageDescription: Add photos from your library to diary entries.
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
+        UISupportedInterfaceOrientations~ipad: [UIInterfaceOrientationPortrait, UIInterfaceOrientationPortraitUpsideDown, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
+    settings:
+      base:
+        PRODUCT_NAME: Hushbook
+        PRODUCT_BUNDLE_IDENTIFIER: com.romadinov.hushbook
+        TARGETED_DEVICE_FAMILY: "1,2"
+        CODE_SIGN_ENTITLEMENTS: Sources/iOS/Hushbook.entitlements
+schemes:
+  HushbookMac:
+    build:
+      targets:
+        HushbookMac: all
+    run:
+      config: Debug
+  HushbookIOS:
+    build:
+      targets:
+        HushbookIOS: all
+    run:
+      config: Debug
