@@ -59,6 +59,19 @@ struct AudioNote: Codable, Identifiable, Hashable, Sendable {
     var language: String?
 }
 
+/// A note written without unlocking, as sealed into the drop box. Becomes an entry at the next unlock.
+struct QuickNote: Codable, Sendable {
+    struct Photo: Codable, Sendable {
+        var id = UUID()
+        var jpeg: Data
+    }
+    var id = UUID()
+    var date = Date()
+    var text: String
+    var photos: [Photo]
+    var location: EntryLocation?
+}
+
 /// What is stored on disk and in iCloud for an entry: the sealed JSON plus a plaintext modification time used to
 /// resolve edit conflicts without the key (CloudKit records its own modification times anyway).
 struct EntryEnvelope: Codable, Sendable {
@@ -71,6 +84,7 @@ enum RecordName {
     static func entry(_ id: UUID) -> String { "entry-\(id.uuidString)" }
     static func photo(_ id: UUID) -> String { "photo-\(id.uuidString)" }
     static func audio(_ id: UUID) -> String { "audio-\(id.uuidString)" }
+    static func quickNote(_ id: UUID) -> String { "quicknote-\(id.uuidString)" }   // never synced; only seals
 
     enum Parsed { case vault, entry(UUID), photo(UUID), audio(UUID), unknown }
     static func parse(_ name: String) -> Parsed {

@@ -81,6 +81,12 @@ struct LockView: View {
                 .padding(.top, 14)
             }
             if working { ProgressView().tint(.white) }
+            Button { QuickNoteDraft.shared.isPresented = true } label: {
+                Label("Quick Note", systemImage: "square.and.pencil").font(.callout.weight(.semibold))
+            }
+            .buttonStyle(.plain)
+            .padding(.top, 18)
+            .help("Write a note without unlocking. It can be read only after unlocking.")
         }
         .onAppear { if !store.canUseBiometrics { focused = .password } }
     }

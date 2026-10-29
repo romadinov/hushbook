@@ -2,7 +2,7 @@
 import SwiftUI
 
 /// Debug screenshots with a demo diary that never syncs:
-/// - Simulator: `SIMCTL_CHILD_HUSHBOOK_DEMO=list|calendar|media|editor|new`
+/// - Simulator: `SIMCTL_CHILD_HUSHBOOK_DEMO=list|calendar|media|editor|new|quicknote|quicknote-import`
 /// - Mac: `HUSHBOOK_DEMO=list HUSHBOOK_DATA_DIR=/tmp/x HUSHBOOK_SNAPSHOT=/tmp/x.png Hushbook` (needs its own data folder)
 extension DiaryStore {
     static var demoMode: String? {
@@ -16,6 +16,7 @@ extension DiaryStore {
     func seedDemo() async {
         if local.loadVault() == nil { await createDiary(password: "demo-demo") }
         else { _ = await unlock(password: "demo-demo") }
+        if Self.demoMode?.hasPrefix("quicknote") == true { await demoQuickNote(); return }
         guard saved.isEmpty else { return }
         let samples: [(Int, String, [String], Bool, CGColor?)] = [
             (0, "Quiet morning\nCoffee on the balcony before anyone woke up. The light over the bay was soft and grey, and for once my head was quiet too.", ["morning", "gratitude"], true, CGColor(srgbRed: 0.2, green: 0.7, blue: 0.75, alpha: 1)),
@@ -37,6 +38,24 @@ extension DiaryStore {
                 e.location = EntryLocation(latitude: p.2, longitude: p.3, name: p.0, locality: p.1, country: "Australia")
             }
             save(e)
+        }
+    }
+
+    /// "quicknote": the quick note sheet over the lock screen. "quicknote-import": a note sealed while locked, then unlocked.
+    private func demoQuickNote() async {
+        try? await Task.sleep(for: .seconds(1))   // the unlock records the drop box key
+        lock()
+        let text = "Can't sleep\nWriting this without unlocking anything. It goes straight into the diary."
+        if Self.demoMode == "quicknote-import" {
+            let photo = Self.swatch(CGColor(srgbRed: 0.3, green: 0.6, blue: 0.9, alpha: 1)).flatMap { Images.normalized($0) }
+            let ok = await addQuickNote(text: text, photos: photo.map { [QuickNote.Photo(jpeg: $0)] } ?? [], location: nil)
+            print("quick note sealed: \(ok), waiting: \(local.allQuickNotes().count)")
+            _ = await unlock(password: "demo-demo")
+            try? await Task.sleep(for: .seconds(1))
+            print("after unlock waiting: \(local.allQuickNotes().count), top entry: \(entries.first?.title ?? "-") photos: \(entries.first?.photoIDs.count ?? 0)")
+        } else {
+            QuickNoteDraft.shared.text = text
+            QuickNoteDraft.shared.isPresented = true
         }
     }
 

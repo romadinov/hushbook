@@ -7,6 +7,7 @@ struct SettingsView: View {
     @State private var repeatNew = ""
     @State private var passwordMessage: String?
     @State private var changing = false
+    @AppStorage("quickNoteInMenuBar") private var quickNoteInMenuBar = true
 
     var body: some View {
         @Bindable var store = store
@@ -35,6 +36,20 @@ struct SettingsView: View {
                 Text("Security")
             } footer: {
                 Text("After you type the diary password, \(BiometricUnlock.kind == .none ? "biometrics" : BiometricUnlock.kindName) can unlock this device until the period ends. The device passcode never unlocks the diary, and enrolling a new face or fingerprint requires the password again. Entries and photos are encrypted with AES-256 before they are stored or synced.")
+            }
+
+            Section {
+                #if os(macOS)
+                Toggle("Show Quick Note in the menu bar", isOn: $quickNoteInMenuBar)
+                #endif
+            } header: {
+                Text("Quick Note")
+            } footer: {
+                #if os(macOS)
+                Text("Write a note without unlocking, from the menu bar or the lock screen. It is sealed so that only the unlocked diary can read it; the quick note window never shows anything, not even notes written there.")
+                #else
+                Text("Write a note without unlocking: touch and hold the Hushbook icon, use the button on the lock screen, or add \"Quick Note\" to the Action button or Control Center in Shortcuts. Only the unlocked diary can read it; the quick note window never shows anything, not even notes written there.")
+                #endif
             }
 
             Section {

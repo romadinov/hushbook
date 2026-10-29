@@ -30,6 +30,19 @@
 	<string>Record voice notes for your diary entries.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Add photos from your library to diary entries.</string>
+	<key>UIApplicationShortcutItems</key>
+	<array>
+		<dict>
+			<key>UIApplicationShortcutItemIconSymbolName</key>
+			<string>square.and.pencil</string>
+			<key>UIApplicationShortcutItemSubtitle</key>
+			<string>Without unlocking</string>
+			<key>UIApplicationShortcutItemTitle</key>
+			<string>Quick Note</string>
+			<key>UIApplicationShortcutItemType</key>
+			<string>com.romadinov.hushbook.quicknote</string>
+		</dict>
+	</array>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>remote-notification</string>

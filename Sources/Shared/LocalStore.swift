@@ -7,6 +7,8 @@ import CloudKit
 ///     Hushbook/entries/<id>.json   EntryEnvelope (sealed entry)
 ///     Hushbook/photos/<id>.bin     sealed JPEG
 ///     Hushbook/audio/<id>.bin      sealed M4A voice note
+///     Hushbook/inbox/<id>.bin      quick note sealed to the drop box key, waiting for the next unlock
+///     Hushbook/dropbox.pub         the drop box public key (see DropBox)
 ///     Hushbook/ck/<record>.sys     CloudKit system fields (change tags)
 ///     Hushbook/sync-state.json     CKSyncEngine state
 final class LocalStore: @unchecked Sendable {
@@ -22,7 +24,7 @@ final class LocalStore: @unchecked Sendable {
         if let demo = ProcessInfo.processInfo.environment["HUSHBOOK_DATA_DIR"] { dir = URL(fileURLWithPath: demo, isDirectory: true) }
         #endif
         root = dir
-        for dir in ["entries", "photos", "audio", "ck"] {
+        for dir in ["entries", "photos", "audio", "inbox", "ck"] {
             try? FileManager.default.createDirectory(at: root.appendingPathComponent(dir), withIntermediateDirectories: true)
         }
         #if os(iOS)
@@ -136,6 +138,31 @@ final class LocalStore: @unchecked Sendable {
             let dir = root.appendingPathComponent("audio")
             return ((try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? [])
                 .compactMap { UUID(uuidString: ($0 as NSString).deletingPathExtension) }
+        }
+    }
+
+    // MARK: Quick notes
+
+    private var dropBoxURL: URL { root.appendingPathComponent("dropbox.pub") }
+
+    func dropBoxKey() -> Data? { locked { try? Data(contentsOf: dropBoxURL) } }
+
+    func saveDropBoxKey(_ data: Data) { locked { write(data, to: dropBoxURL) } }
+
+    private func quickNoteURL(_ id: UUID) -> URL { root.appendingPathComponent("inbox/\(id.uuidString).bin") }
+
+    func saveQuickNote(_ sealed: Data, id: UUID) { locked { write(sealed, to: quickNoteURL(id)) } }
+
+    func deleteQuickNote(_ id: UUID) { locked { try? FileManager.default.removeItem(at: quickNoteURL(id)) } }
+
+    func allQuickNotes() -> [(id: UUID, sealed: Data)] {
+        locked {
+            let dir = root.appendingPathComponent("inbox")
+            return ((try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)) ?? []).compactMap { url in
+                guard let id = UUID(uuidString: url.deletingPathExtension().lastPathComponent),
+                      let data = try? Data(contentsOf: url) else { return nil }
+                return (id, data)
+            }
         }
     }
 

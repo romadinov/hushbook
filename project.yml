@@ -64,6 +64,11 @@ targets:
         CFBundleDisplayName: Hushbook
         UILaunchScreen: {}
         UIBackgroundModes: [remote-notification]
+        UIApplicationShortcutItems:
+          - UIApplicationShortcutItemType: com.romadinov.hushbook.quicknote
+            UIApplicationShortcutItemTitle: Quick Note
+            UIApplicationShortcutItemSubtitle: Without unlocking
+            UIApplicationShortcutItemIconSymbolName: square.and.pencil
         NSFaceIDUsageDescription: Face ID unlocks your diary after you have entered its password.
         NSCameraUsageDescription: Take photos for your diary entries.
         NSMicrophoneUsageDescription: Record voice notes for your diary entries.

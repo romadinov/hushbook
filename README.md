@@ -19,6 +19,18 @@ A private, encrypted diary for Mac and iPhone, styled after Day One, synced thro
   iCloud Keychain: the device passcode opens those.
 - Photos are re-encoded as JPEG, which drops EXIF/GPS metadata.
 
+## Quick Note (no password, no Face ID / Touch ID)
+
+Write a note without unlocking: the Mac menu bar item (✎), the **Quick Note** button on the lock screen, the iPhone/iPad
+Home Screen quick action (touch and hold the icon), or the "Quick Note" App Shortcut (Action button, Control Center, Siri).
+
+It is write-only. A Curve25519 drop box key pair is derived from the diary key (HKDF), so every device has the same
+one; only the public half (`dropbox.pub`) is on disk, refreshed at every unlock. Each note (text, photos, location) is
+sealed to it with a fresh X25519 key + AES-GCM into `inbox/<id>.bin`. Nothing without the diary key can read it — not
+the quick note window, not even right after writing. At the next unlock the notes become ordinary entries (and sync).
+A device needs one unlock with this version before quick notes work there. Inbox notes stay on the device that wrote
+them until it is unlocked.
+
 ## Voice notes
 
 The mic button in an entry records a voice note. It's encrypted like photos (`Audio` records in iCloud), playable in

@@ -63,13 +63,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidResignActive(_ notification: Notification) { store?.didEnterBackground() }
     func applicationDidBecomeActive(_ notification: Notification) { store?.didBecomeActive() }
-    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
+    /// With the quick note in the menu bar, keep running after the window closes so the menu bar item stays.
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        !(UserDefaults.standard.object(forKey: "quickNoteInMenuBar") as? Bool ?? true)
+    }
 }
 
 @main
 struct HushbookMacApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
     @State private var store = DiaryStore()
+    @Bindable private var quickNote = QuickNoteDraft.shared
+    @AppStorage("quickNoteInMenuBar") private var quickNoteInMenuBar = true
 
     /// Picks a Day One export (.zip or unzipped folder), unzips it to a temporary folder and imports it.
     @MainActor private func importDayOne() async {
@@ -106,6 +111,12 @@ struct HushbookMacApp: App {
             .id(store.journalColor)   // Theme.accent is read when views are built
             .environment(store)
             .onAppear { delegate.store = store }
+            .sheet(isPresented: $quickNote.isPresented) {
+                QuickNoteView { quickNote.isPresented = false }
+                    .frame(width: 520, height: 420)
+                    .environment(store)
+                    .tint(Theme.accent)
+            }
         }
         .defaultSize(width: 1280, height: 800)
         .commands {
@@ -130,6 +141,15 @@ struct HushbookMacApp: App {
                     .keyboardShortcut("r")
             }
         }
+
+        // The mini app: write a note from the menu bar without unlocking.
+        MenuBarExtra("Hushbook Quick Note", systemImage: "square.and.pencil", isInserted: $quickNoteInMenuBar) {
+            QuickNoteView { NSApp.keyWindow?.close() }
+                .frame(width: 420, height: 360)
+                .environment(store)
+                .tint(Theme.accent)
+        }
+        .menuBarExtraStyle(.window)
 
         Settings {
             Group {

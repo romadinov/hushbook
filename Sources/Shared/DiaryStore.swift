@@ -148,6 +148,7 @@ final class DiaryStore {
         }
         reloadAll()
         phase = .unlocked
+        Task { await importQuickNotes() }
         Task { await sync.syncNow() }
     }
 
@@ -424,6 +425,52 @@ final class DiaryStore {
     func deleteAudio(_ id: UUID) {
         local.deleteAudio(id)
         sync.enqueueDelete(RecordName.audio(id))
+    }
+
+    // MARK: Quick notes
+
+    /// Quick notes need the drop box public key, which this device learns the first time the diary is unlocked.
+    var canTakeQuickNotes: Bool { local.dropBoxKey() != nil }
+
+    /// Seals a note with the drop box public key. Works while locked; nothing on this device can read the note
+    /// until the diary is unlocked, when it becomes an ordinary entry.
+    func addQuickNote(text: String, photos: [QuickNote.Photo], location: EntryLocation?) async -> Bool {
+        guard let raw = local.dropBoxKey(),
+              let recipient = try? Curve25519.KeyAgreement.PublicKey(rawRepresentation: raw) else { return false }
+        let id = UUID()
+        let sealed = await Task.detached { () -> Data? in
+            let note = QuickNote(id: id, text: text, photos: photos, location: location)
+            guard let json = try? JSONEncoder().encode(note) else { return nil }
+            return try? DropBox.seal(json, to: recipient, id: RecordName.quickNote(id))
+        }.value
+        guard let sealed else { return false }
+        local.saveQuickNote(sealed, id: id)
+        if key != nil { await importQuickNotes() }
+        return true
+    }
+
+    /// Turns sealed quick notes into entries. Also records the drop box public key for later quick notes.
+    private func importQuickNotes() async {
+        guard let key else { return }
+        let dropBox = DropBox.privateKey(diaryKey: key)
+        let publicKey = dropBox.publicKey.rawRepresentation
+        if local.dropBoxKey() != publicKey { local.saveDropBoxKey(publicKey) }   // also undoes any swapped-in key
+        for (id, sealed) in local.allQuickNotes() {
+            guard self.key != nil else { return }   // locked meanwhile; the rest wait for the next unlock
+            guard let json = try? DropBox.open(sealed, with: dropBox, id: RecordName.quickNote(id)),
+                  let note = try? JSONDecoder().decode(QuickNote.self, from: json) else { continue }
+            if local.envelope(note.id) == nil {
+                var photoIDs: [UUID] = []
+                for photo in note.photos {
+                    var stored = local.sealedPhoto(photo.id) != nil
+                    if !stored { stored = await addPhoto(photo.jpeg, id: photo.id) != nil }
+                    if stored { photoIDs.append(photo.id) }
+                }
+                persist(Entry(id: note.id, date: note.date, text: note.text, photoIDs: photoIDs,
+                              created: note.date, modified: note.date, location: note.location))
+            }
+            local.deleteQuickNote(id)
+        }
     }
 
     // MARK: Day One import
