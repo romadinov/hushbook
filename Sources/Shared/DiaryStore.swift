@@ -66,6 +66,7 @@ final class DiaryStore {
         }
         #if DEBUG
         if Self.demoMode != nil { sync.disabled = true; Task { await seedDemo() }; return }
+        if ProcessInfo.processInfo.environment["HUSHBOOK_DATA_DIR"] != nil { sync.disabled = true; return }   // never sync a test folder
         #endif
         sync.start()
         if phase == .checkingCloud { Task { await lookForExistingDiary() } }

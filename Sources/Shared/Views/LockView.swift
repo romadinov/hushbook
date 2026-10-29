@@ -66,11 +66,19 @@ struct LockView: View {
             .disabled(password.isEmpty || working)
             if store.useBiometrics && BiometricUnlock.kind != .none {
                 Button { Task { await tryBiometrics(userInitiated: true) } } label: {
-                    Label("Unlock with \(BiometricUnlock.kindName)", systemImage: BiometricUnlock.symbol)
+                    VStack(spacing: 10) {
+                        Image(systemName: BiometricUnlock.symbol)
+                            .font(.system(size: 44, weight: .regular))
+                            .frame(width: 84, height: 84)
+                            .background(.white.opacity(0.18), in: Circle())
+                            .overlay(Circle().stroke(.white.opacity(0.35), lineWidth: 1))
+                        Text("Unlock with \(BiometricUnlock.kindName)")
+                            .font(.headline)
+                    }
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .font(.callout.weight(.semibold))
-                .padding(.top, 4)
+                .padding(.top, 14)
             }
             if working { ProgressView().tint(.white) }
         }
