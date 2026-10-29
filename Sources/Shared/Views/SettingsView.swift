@@ -37,6 +37,16 @@ struct SettingsView: View {
                 Text("After you type the diary password, \(BiometricUnlock.kind == .none ? "biometrics" : BiometricUnlock.kindName) can unlock this device until the period ends. The device passcode never unlocks the diary, and enrolling a new face or fingerprint requires the password again. Entries and photos are encrypted with AES-256 before they are stored or synced.")
             }
 
+            Section("Appearance") {
+                Picker("Journal colour", selection: $store.journalColor) {
+                    ForEach(JournalColor.allCases) { c in
+                        Label { Text(c.name) } icon: { Image(systemName: "circle.fill").foregroundStyle(c.color) }.tag(c)
+                    }
+                }
+            }
+
+            VoiceSettings()
+
             Section("Change Password") {
                 SecureField("Current password", text: $current)
                 SecureField("New password", text: $new)
@@ -81,5 +91,42 @@ struct SettingsView: View {
         changing = false
         passwordMessage = ok ? "Password changed on all devices." : "The current password is wrong."
         if ok { current = ""; new = ""; repeatNew = "" }
+    }
+}
+
+private struct VoiceSettings: View {
+    @Bindable private var t = Transcriber.shared
+
+    var body: some View {
+        Section {
+            Picker("Language", selection: $t.mode) {
+                ForEach(Transcriber.Mode.allCases) { Text($0.title).tag($0) }
+            }
+            model("Whisper (English, language detection)", status: t.whisperStatus, size: "≈ 0.6 GB") {
+                Task { await t.prepareWhisper() }
+            }
+            model("GigaAM v3 (Russian)", status: t.gigaStatus, size: "≈ 0.45 GB") {
+                Task { await t.prepareGiga() }
+            }
+            if t.whisperDownloaded || t.gigaDownloaded {
+                Button("Delete Speech Models", role: .destructive) { t.deleteModels() }
+            }
+        } header: {
+            Text("Voice Notes")
+        } footer: {
+            Text("Voice notes are transcribed on this device; audio is never sent anywhere. Whisper tells Russian from English and transcribes English; GigaAM transcribes Russian. Models download once, the first time they're needed.")
+        }
+    }
+
+    private func model(_ name: String, status: Transcriber.Status, size: String, prepare: @escaping () -> Void) -> some View {
+        LabeledContent(name) {
+            switch status {
+            case .notDownloaded: Button("Download \(size)", action: prepare)
+            case .downloading(let p): ProgressView(value: p).frame(width: 120)
+            case .loading: Text("Loading…").foregroundStyle(.secondary)
+            case .ready: Text("Ready").foregroundStyle(.secondary)
+            case .failed(let error): Button("Retry", action: prepare).help(error)
+            }
+        }
     }
 }

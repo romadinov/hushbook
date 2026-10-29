@@ -22,6 +22,9 @@ struct EntryEditor: View {
     @State private var newTag = ""
     @State private var saveTask: Task<Void, Never>?
     @State private var addingPhotos = 0
+    @State private var recorder = VoiceRecorder()
+    @State private var addedAudio: Set<UUID> = []
+    @State private var recordError: String?
     @FocusState private var tagFocused: Bool
 
     init(entry: Entry, autofocus: Bool = false, onDelete: @escaping () -> Void = {}) {
@@ -33,12 +36,57 @@ struct EntryEditor: View {
     var body: some View {
         VStack(spacing: 0) {
             #if os(macOS)
-            actionBar
+            // Day One for Mac: date on top, then text, photos and voice notes in one scroll, tags and tools below.
+            HStack {
+                dateLabel
+                Spacer()
+                starButton
+                moreMenu
+            }
+            .buttonStyle(.borderless)
+            .padding(.horizontal, 18)
+            .padding(.vertical, 10)
             Divider()
-            #endif
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    DiaryTextView(text: $draft.text, autofocus: autofocus && draft.text.isEmpty, scrolls: false, onImages: add)
+                    ForEach(draft.photoIDs, id: \.self) { id in
+                        InlinePhoto(id: id)
+                            .onTapGesture { viewing = PhotoRef(id: id) }
+                            .contextMenu { photoMenu(id) }
+                            .padding(.horizontal, 28)
+                    }
+                    voiceNotes.padding(.horizontal, 28)
+                }
+                .padding(.bottom, 24)
+            }
+            if recorder.isRecording {
+                RecordingBar(recorder: recorder, onStop: stopRecording, onCancel: recorder.cancel)
+            }
+            Divider()
+            HStack(spacing: 0) {
+                tagBar.frame(maxWidth: .infinity, alignment: .leading)
+                actionBar
+            }
+            #else
             photos
+            voiceNotes.padding(.horizontal, 18).padding(.top, draft.audio.isEmpty ? 0 : 10)
             DiaryTextView(text: $draft.text, autofocus: autofocus && draft.text.isEmpty, onImages: add)
             tagBar
+            #endif
+        }
+        .alert("Can't Record", isPresented: Binding(get: { recordError != nil }, set: { if !$0 { recordError = nil } })) {
+            Button("OK") { recordError = nil }
+        } message: {
+            Text(recordError ?? "")
+        }
+        .onAppear { store.editorOpened(draft.id) }
+        .onChange(of: store.finishedTranscripts.keys.map(\.uuidString).sorted()) { _, _ in
+            for note in draft.audio {
+                guard let result = store.takeTranscript(note.id) else { continue }
+                draft.apply(transcript: result.text, to: note.id)
+                if let i = draft.audio.firstIndex(where: { $0.id == note.id }) { draft.audio[i].language = result.language }
+            }
         }
         #if os(iOS)
         .navigationTitle(draft.date.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated).year()))
@@ -49,7 +97,13 @@ struct EntryEditor: View {
                 moreMenu
             }
         }
-        .safeAreaInset(edge: .bottom) { actionBar.background(.bar) }
+        .safeAreaInset(edge: .bottom) {
+            if recorder.isRecording {
+                RecordingBar(recorder: recorder, onStop: stopRecording, onCancel: recorder.cancel)
+            } else {
+                actionBar.background(.bar)
+            }
+        }
         .fullScreenCover(isPresented: $showCamera) {
             CameraPicker { if let data = $0.jpegData(compressionQuality: 0.95) { add([data]) } }.ignoresSafeArea()
         }
@@ -70,8 +124,10 @@ struct EntryEditor: View {
         .onChange(of: draft) { _, _ in scheduleSave() }
         .onDisappear {
             saveTask?.cancel()
-            guard !deleted else { return }
+            recorder.cancel()
+            guard !deleted else { store.editorClosed(draft.id); return }
             store.save(draft)
+            store.editorClosed(draft.id)
             store.discardIfEmpty(draft.id)
         }
         .confirmationDialog("Delete this entry?", isPresented: $confirmDelete, titleVisibility: .visible) {
@@ -133,10 +189,9 @@ struct EntryEditor: View {
 
     private var actionBar: some View {
         HStack(spacing: 22) {
-            #if os(macOS)
-            dateLabel
-            Spacer()
-            #endif
+            Button(action: startRecording) { Image(systemName: "mic") }
+                .help("Record a voice note")
+                .disabled(recorder.isRecording)
             PhotosPicker(selection: $pickerItems, maxSelectionCount: 20, matching: .images) {
                 Image(systemName: "photo.on.rectangle.angled")
             }
@@ -165,13 +220,11 @@ struct EntryEditor: View {
             Text("\(wordCount) words").font(.caption).foregroundStyle(.secondary)
             #else
             if addingPhotos > 0 { ProgressView().controlSize(.small) }
-            starButton
-            moreMenu
             #endif
         }
         .font(.title3)
         .buttonStyle(.borderless)
-        .tint(Theme.blue)
+        .tint(Theme.accent)
         .padding(.horizontal, 18)
         .padding(.vertical, 10)
         #if os(iOS)
@@ -205,6 +258,38 @@ struct EntryEditor: View {
     @ViewBuilder private func photoMenu(_ id: UUID) -> some View {
         Button { viewing = PhotoRef(id: id) } label: { Label("View", systemImage: "arrow.up.left.and.arrow.down.right") }
         Button(role: .destructive) { removePhoto(id) } label: { Label("Remove Photo", systemImage: "trash") }
+    }
+
+    @ViewBuilder private var voiceNotes: some View {
+        if !draft.audio.isEmpty {
+            VStack(spacing: 8) {
+                ForEach(draft.audio) { note in
+                    AudioNoteView(note: note, entryID: draft.id) { removeAudio(note.id) }
+                }
+            }
+        }
+    }
+
+    private func startRecording() {
+        Task {
+            do { try await recorder.start() } catch { recordError = error.localizedDescription }
+        }
+    }
+
+    private func stopRecording() {
+        guard let (url, duration) = recorder.stop() else { return }
+        let entryID = draft.id
+        Task {
+            guard let note = await store.addVoiceNote(file: url, duration: duration, entryID: entryID) else { return }
+            draft.audio.append(note)
+            addedAudio.insert(note.id)
+            store.save(draft)   // so a transcript finishing after the editor closes finds the note
+        }
+    }
+
+    private func removeAudio(_ id: UUID) {
+        draft.audio.removeAll { $0.id == id }
+        if addedAudio.remove(id) != nil { store.deleteAudio(id) }   // saved notes are removed when the entry saves
     }
 
     private var tagBar: some View {
@@ -318,3 +403,23 @@ struct CameraPicker: UIViewControllerRepresentable {
     }
 }
 #endif
+
+/// A photo at full width and its own aspect ratio, as Day One shows photos inside an entry.
+struct InlinePhoto: View {
+    @Environment(DiaryStore.self) private var store
+    let id: UUID
+    @State private var image: CGImage?
+
+    var body: some View {
+        Group {
+            if let image {
+                Image(cgImage: image).resizable().scaledToFit().frame(maxHeight: 520)
+            } else {
+                Color.gray.opacity(0.12).frame(height: 240).overlay { Image(systemName: "photo").foregroundStyle(.tertiary) }
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .task(id: "\(id)-\(store.photoRevision)") { image = await store.image(id, maxPixel: 2000) }
+    }
+}

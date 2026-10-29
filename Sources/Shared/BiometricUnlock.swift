@@ -65,9 +65,9 @@ enum BiometricUnlock {
         var query = baseQuery()
         query[kSecValueData as String] = payload
         query[kSecAttrAccessControl as String] = access
-        // Readable without authentication, for showing the unlock button; the protected value is authoritative.
-        query[kSecAttrGeneric as String] = Data(String(until.timeIntervalSince1970).utf8)
-        return SecItemAdd(query as CFDictionary, nil) == errSecSuccess
+        guard SecItemAdd(query as CFDictionary, nil) == errSecSuccess else { return false }
+        UserDefaults.standard.set(until, forKey: hintKey)
+        return true
     }
 
     /// Diagnostic: stores and removes a throwaway item with the same protection. Returns the SecItemAdd status.
@@ -87,22 +87,17 @@ enum BiometricUnlock {
     }
 
     static func forget() {
+        UserDefaults.standard.removeObject(forKey: hintKey)
         SecItemDelete(baseQuery() as CFDictionary)
     }
 
-    /// Expiry of the remembered key, read without prompting. Nil when nothing is remembered.
+    private static let hintKey = "biometricUnlockUntil"
+
+    /// When the remembered key expires, or nil if none is remembered. A hint kept in UserDefaults: any lookup of the
+    /// access-controlled Keychain item (even attributes only) makes macOS ask for Touch ID and blocks until answered.
+    /// Changing the hint can't extend access; the authoritative expiry is sealed inside the protected value.
     static var rememberedUntil: Date? {
-        var query = baseQuery()
-        query[kSecReturnAttributes as String] = true
-        query[kSecMatchLimit as String] = kSecMatchLimitOne
-        // Attributes never need authentication. Don't pass an `interactionNotAllowed` context here: macOS then
-        // refuses the lookup with errSecInteractionNotAllowed and the remembered key looks absent.
-        var result: CFTypeRef?
-        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
-              let attrs = result as? [String: Any] else { return nil }
-        guard let data = attrs[kSecAttrGeneric as String] as? Data,
-              let seconds = Double(String(decoding: data, as: UTF8.self)) else { return .distantPast }
-        return Date(timeIntervalSince1970: seconds)
+        UserDefaults.standard.object(forKey: hintKey) as? Date
     }
 
     static var canUnlock: Bool {
@@ -139,7 +134,7 @@ enum BiometricUnlock {
         switch status {
         case errSecSuccess: break
         case errSecUserCanceled: return .failure(.cancelled)
-        case errSecItemNotFound: return .failure(.notRemembered)   // removed because biometrics changed
+        case errSecItemNotFound: forget(); return .failure(.notRemembered)   // removed because biometrics changed
         case errSecAuthFailed: return .failure(.unavailable("\(kindName) didn't match. Use the diary password."))
         default: return .failure(.unavailable((SecCopyErrorMessageString(status, nil) as String?) ?? "\(kindName) failed."))
         }

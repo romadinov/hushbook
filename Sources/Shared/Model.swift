@@ -9,8 +9,27 @@ struct Entry: Codable, Identifiable, Hashable, Sendable {
     var starred = false
     var created = Date()
     var modified = Date()
+    /// Optional so entries saved before voice notes existed still decode.
+    var audioNotes: [AudioNote]?
 
-    var isEmpty: Bool { text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && photoIDs.isEmpty }
+    var audio: [AudioNote] {
+        get { audioNotes ?? [] }
+        set { audioNotes = newValue.isEmpty ? nil : newValue }
+    }
+
+    var isEmpty: Bool {
+        text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && photoIDs.isEmpty && audio.isEmpty
+    }
+
+    /// Stores a finished transcript on its voice note and adds it to the entry text.
+    mutating func apply(transcript: String, to audioID: UUID) {
+        guard let i = audio.firstIndex(where: { $0.id == audioID }), audio[i].transcript == nil else { return }
+        audio[i].transcript = transcript
+        let t = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !t.isEmpty else { return }
+        let body = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        text = body.isEmpty ? t : body + "\n" + t
+    }
 
     /// First non-empty line, as Day One shows it.
     var title: String {
@@ -30,6 +49,15 @@ struct Entry: Codable, Identifiable, Hashable, Sendable {
     }
 }
 
+struct AudioNote: Codable, Identifiable, Hashable, Sendable {
+    var id = UUID()
+    var duration: Double
+    var recorded = Date()
+    /// Nil while transcribing; "" when nothing was recognised.
+    var transcript: String?
+    var language: String?
+}
+
 /// What is stored on disk and in iCloud for an entry: the sealed JSON plus a plaintext modification time used to
 /// resolve edit conflicts without the key (CloudKit records its own modification times anyway).
 struct EntryEnvelope: Codable, Sendable {
@@ -41,12 +69,14 @@ enum RecordName {
     static let vault = "vault"
     static func entry(_ id: UUID) -> String { "entry-\(id.uuidString)" }
     static func photo(_ id: UUID) -> String { "photo-\(id.uuidString)" }
+    static func audio(_ id: UUID) -> String { "audio-\(id.uuidString)" }
 
-    enum Parsed { case vault, entry(UUID), photo(UUID), unknown }
+    enum Parsed { case vault, entry(UUID), photo(UUID), audio(UUID), unknown }
     static func parse(_ name: String) -> Parsed {
         if name == vault { return .vault }
         if name.hasPrefix("entry-"), let id = UUID(uuidString: String(name.dropFirst(6))) { return .entry(id) }
         if name.hasPrefix("photo-"), let id = UUID(uuidString: String(name.dropFirst(6))) { return .photo(id) }
+        if name.hasPrefix("audio-"), let id = UUID(uuidString: String(name.dropFirst(6))) { return .audio(id) }
         return .unknown
     }
 }

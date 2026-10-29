@@ -1,10 +1,34 @@
 import SwiftUI
 
+/// Day One-style journal colours. The chosen one tints the whole app; the root view is rebuilt when it changes.
+enum JournalColor: String, CaseIterable, Identifiable {
+    case red, blue, green, orange, purple, teal, pink, charcoal
+    var id: String { rawValue }
+    var name: String { rawValue.capitalized }
+    var color: Color {
+        switch self {
+        case .red: Color(red: 0.78, green: 0.28, blue: 0.40)
+        case .blue: Color(red: 0.17, green: 0.62, blue: 0.94)
+        case .green: Color(red: 0.24, green: 0.64, blue: 0.40)
+        case .orange: Color(red: 0.93, green: 0.51, blue: 0.20)
+        case .purple: Color(red: 0.53, green: 0.36, blue: 0.82)
+        case .teal: Color(red: 0.13, green: 0.62, blue: 0.64)
+        case .pink: Color(red: 0.90, green: 0.36, blue: 0.62)
+        case .charcoal: Color(red: 0.25, green: 0.27, blue: 0.31)
+        }
+    }
+
+    static var current: JournalColor {
+        JournalColor(rawValue: UserDefaults.standard.string(forKey: "journalColor") ?? "") ?? .red
+    }
+}
+
 enum Theme {
-    /// Day One's journal blue.
-    static let blue = Color(red: 0.17, green: 0.62, blue: 0.94)
-    static let blueDeep = Color(red: 0.08, green: 0.44, blue: 0.80)
-    static let headerGradient = LinearGradient(colors: [blue, blueDeep], startPoint: .topLeading, endPoint: .bottomTrailing)
+    static var accent: Color { JournalColor.current.color }
+    static var accentDeep: Color { accent.mix(with: .black, by: 0.25) }
+    static var headerGradient: LinearGradient {
+        LinearGradient(colors: [accent, accentDeep], startPoint: .topLeading, endPoint: .bottomTrailing)
+    }
 }
 
 struct MonthSection: Identifiable {
@@ -22,21 +46,25 @@ func monthSections(_ entries: [Entry]) -> [MonthSection] {
     }
 }
 
-/// Day One's left column: weekday over a large day number; blank for later entries on the same day.
+/// Day One's date tile: weekday over a large day number in a rounded box; blank for later entries that day.
 struct DateColumn: View {
     let date: Date
     let visible: Bool
+    var selected = false
 
     var body: some View {
         VStack(spacing: 0) {
             Text(date.formatted(.dateTime.weekday(.abbreviated)).uppercased())
-                .font(.caption2.weight(.semibold))
-                .foregroundStyle(.secondary)
-            Text(date.formatted(.dateTime.day()))
-                .font(.system(size: 26, weight: .bold, design: .rounded))
-                .foregroundStyle(Calendar.current.isDateInToday(date) ? Theme.blue : .primary)
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(selected ? Color.black.opacity(0.55) : Color.secondary)
+            Text(date.formatted(.dateTime.day(.twoDigits)))
+                .font(.system(size: 24, weight: .semibold, design: .rounded))
+                .foregroundStyle(selected ? Color.black : Calendar.current.isDateInToday(date) ? Theme.accent : Color.primary)
+                .monospacedDigit()
         }
-        .frame(width: 42)
+        .frame(width: 52, height: 56)
+        .background(selected ? Color.white : Color.clear, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(Color.primary.opacity(selected ? 0 : 0.12)))
         .opacity(visible ? 1 : 0)
     }
 }
@@ -44,6 +72,7 @@ struct DateColumn: View {
 struct EntryRow: View {
     let entry: Entry
     var showDate = true
+    var selected = false
 
     var body: some View {
         // In a narrow column the photo goes first, so the text never squeezes into a sliver.
@@ -51,40 +80,54 @@ struct EntryRow: View {
             row(withPhoto: true)
             row(withPhoto: false)
         }
-        .padding(.vertical, 6)
+        .padding(.vertical, 8)
+        .padding(.horizontal, selected ? 10 : 0)
+        .background(selected ? Theme.accent : Color.clear, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         .contentShape(Rectangle())
     }
 
+    private var secondary: Color { selected ? .white.opacity(0.75) : .secondary }
+
     private func row(withPhoto: Bool) -> some View {
         HStack(alignment: .top, spacing: 12) {
-            DateColumn(date: entry.date, visible: showDate)
+            DateColumn(date: entry.date, visible: showDate, selected: selected)
             VStack(alignment: .leading, spacing: 3) {
                 if entry.isEmpty {
-                    Text("New Entry").font(.headline).foregroundStyle(.secondary)
+                    Text("New Entry").font(.headline).foregroundStyle(secondary)
                 } else {
                     if !entry.title.isEmpty {
-                        Text(entry.title).font(.headline).lineLimit(1)
+                        Text(entry.title).font(.headline).lineLimit(2)
+                            .foregroundStyle(selected ? Color.white : Color.primary)
                     }
                     if !entry.preview.isEmpty {
-                        Text(entry.preview).font(.subheadline).foregroundStyle(.secondary).lineLimit(3)
+                        Text(entry.preview).font(.subheadline).foregroundStyle(secondary).lineLimit(2)
                     }
                 }
                 HStack(spacing: 6) {
                     Text(entry.date.formatted(date: .omitted, time: .shortened)).fixedSize()
-                    if entry.starred { Image(systemName: "star.fill").foregroundStyle(.yellow) }
+                    if entry.starred { Image(systemName: "star.fill").foregroundStyle(selected ? .white : .yellow) }
+                    if !entry.audio.isEmpty { Image(systemName: "waveform") }
                     if !entry.tags.isEmpty {
-                        Text(entry.tags.map { "#\($0)" }.joined(separator: " ")).foregroundStyle(Theme.blue).lineLimit(1)
+                        Text(entry.tags.map { "#\($0)" }.joined(separator: " "))
+                            .foregroundStyle(selected ? Color.white : Theme.accent).lineLimit(1)
                     }
                 }
                 .font(.caption)
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(selected ? Color.white.opacity(0.7) : Color.secondary.opacity(0.8))
                 .lineLimit(1)
                 .padding(.top, 2)
             }
-            .frame(minWidth: 150, maxWidth: .infinity, alignment: .leading)
+            .frame(minWidth: withPhoto ? 150 : 0, idealWidth: 150, maxWidth: .infinity, alignment: .leading)   // ViewThatFits measures ideal width
             .layoutPriority(1)
             if withPhoto, let first = entry.photoIDs.first {
-                PhotoThumb(id: first, side: 68)
+                PhotoThumb(id: first, side: 72, cornerRadius: 10)
+                    .overlay(alignment: .bottomLeading) {
+                        if entry.photoIDs.count > 1 {
+                            Label("\(entry.photoIDs.count)", systemImage: "photo")
+                                .font(.caption2.weight(.semibold)).foregroundStyle(.white)
+                                .shadow(radius: 2).padding(5)
+                        }
+                    }
             }
         }
     }
@@ -133,8 +176,8 @@ struct TagChip: View {
         .font(.subheadline.weight(.medium))
         .padding(.horizontal, 10)
         .padding(.vertical, 5)
-        .foregroundStyle(Theme.blue)
-        .background(Theme.blue.opacity(0.12), in: Capsule())
+        .foregroundStyle(Theme.accent)
+        .background(Theme.accent.opacity(0.12), in: Capsule())
     }
 }
 
@@ -216,9 +259,9 @@ private struct DayCell: View {
                 PhotoThumb(id: photo, side: 40, cornerRadius: 20)
                 Circle().fill(.black.opacity(0.25))
             } else if !entries.isEmpty {
-                Circle().fill(Theme.blue)
+                Circle().fill(Theme.accent)
             } else if Calendar.current.isDateInToday(date) {
-                Circle().stroke(Theme.blue, lineWidth: 1.5)
+                Circle().stroke(Theme.accent, lineWidth: 1.5)
             }
             Text("\(day)")
                 .font(.subheadline.weight(entries.isEmpty ? .regular : .bold))

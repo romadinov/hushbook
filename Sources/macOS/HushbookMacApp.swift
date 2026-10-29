@@ -11,11 +11,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var observers: [NSObjectProtocol] = []
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Diagnostic: `Hushbook --transcribe-test a.m4a b.wav` prints what voice notes would transcribe to.
+        if let i = CommandLine.arguments.firstIndex(of: "--transcribe-test") {
+            let files = CommandLine.arguments[(i + 1)...]
+            Task { @MainActor in
+                for file in files {
+                    let t0 = Date()
+                    let samples = (try? AudioSamples.load16k(URL(fileURLWithPath: file))) ?? []
+                    let result = await Transcriber.shared.transcribe(samples)
+                    print("\(file) [\(result.language)] \(String(format: "%.1fs", Date().timeIntervalSince(t0))): \(result.text)")
+                }
+                exit(0)
+            }
+            return
+        }
         if CommandLine.arguments.contains("--keychain-selftest") {
             let result = BiometricUnlock.selfTest()
             print("biometry: \(result.kind) remembered: \(BiometricUnlock.rememberedUntil.map { "\($0)" } ?? "none") SecItemAdd: \(result.status) \(SecCopyErrorMessageString(result.status, nil) as String? ?? "")")
             exit(0)
         }
+        #if DEBUG
+        Self.snapshotIfRequested()
+        #endif
         NSApplication.shared.registerForRemoteNotifications()
         // Lock straight away when the Mac sleeps, the screen locks or another user takes over.
         let ws = NSWorkspace.shared.notificationCenter
@@ -30,6 +47,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 MainActor.assumeIsolated { self?.store?.lock() }
             })
     }
+
+    #if DEBUG
+    /// `HUSHBOOK_SNAPSHOT=/path.png`: render the main window into a PNG (no Screen Recording permission needed), quit.
+    static func snapshotIfRequested() {
+        guard let path = ProcessInfo.processInfo.environment["HUSHBOOK_SNAPSHOT"] else { return }
+        let delay = Double(ProcessInfo.processInfo.environment["HUSHBOOK_SNAPSHOT_DELAY"] ?? "") ?? 5
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+            if let window = NSApp.windows.first(where: { $0.isVisible && $0.frame.width > 600 }),
+               let view = window.contentView?.superview ?? window.contentView,
+               let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) {
+                view.cacheDisplay(in: view.bounds, to: rep)
+                try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
+            }
+            NSApp.terminate(nil)
+        }
+    }
+    #endif
 
     func applicationDidResignActive(_ notification: Notification) { store?.didEnterBackground() }
     func applicationDidBecomeActive(_ notification: Notification) { store?.didBecomeActive() }
@@ -71,10 +105,13 @@ struct HushbookMacApp: App {
             Group {
                 if store.phase == .unlocked { MacHome() } else { LockView() }
             }
-            .frame(minWidth: 820, minHeight: 520)
+            .frame(minWidth: 1000, minHeight: 560)
+            .tint(Theme.accent)
+            .id(store.journalColor)   // Theme.accent is read when views are built
             .environment(store)
             .onAppear { delegate.store = store }
         }
+        .defaultSize(width: 1280, height: 800)
         .commands {
             CommandGroup(replacing: .newItem) {
                 Button("New Entry") { NotificationCenter.default.post(name: .newEntry, object: nil) }

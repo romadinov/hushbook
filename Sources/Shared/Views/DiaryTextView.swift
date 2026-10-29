@@ -6,6 +6,8 @@ import UniformTypeIdentifiers
 struct DiaryTextView {
     @Binding var text: String
     var autofocus = false
+    /// Mac only: false makes the text grow with its content, to sit in a larger scroll view with photos below.
+    var scrolls = true
     var onImages: ([Data]) -> Void
 }
 
@@ -171,12 +173,9 @@ import AppKit
 extension DiaryTextView: NSViewRepresentable {
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
-    func makeNSView(context: Context) -> NSScrollView {
-        let scroll = NSScrollView()
-        scroll.hasVerticalScroller = true
-        scroll.drawsBackground = false
-        scroll.borderType = .noBorder
-        let tv = PasteNSTextView(frame: NSRect(origin: .zero, size: scroll.contentSize))
+    func makeNSView(context: Context) -> NSView {
+        // TextKit 1, so the non-scrolling variant can measure its height with the layout manager.
+        let tv = PasteNSTextView(usingTextLayoutManager: false)
         tv.delegate = context.coordinator
         tv.isRichText = true            // for the title style; every edit re-applies the plain styles
         tv.importsGraphics = false
@@ -185,28 +184,55 @@ extension DiaryTextView: NSViewRepresentable {
         tv.isAutomaticQuoteSubstitutionEnabled = true
         tv.isAutomaticDashSubstitutionEnabled = true
         tv.textContainerInset = NSSize(width: 28, height: 18)
-        tv.minSize = .zero
-        tv.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: .greatestFiniteMagnitude)
-        tv.isVerticallyResizable = true
         tv.isHorizontallyResizable = false
-        tv.autoresizingMask = [.width]
         tv.textContainer?.widthTracksTextView = true
         tv.string = text
         if let storage = tv.textStorage { Style.apply(to: storage) }
         tv.typingAttributes = Style.typingAttributes(atTitle: text.isEmpty)
         tv.onImages = { [weak coordinator = context.coordinator] in coordinator?.parent.onImages($0) }
-        scroll.documentView = tv
         if autofocus { DispatchQueue.main.async { tv.window?.makeFirstResponder(tv) } }
+        guard scrolls else {
+            tv.isVerticallyResizable = false
+            return tv
+        }
+        let scroll = NSScrollView()
+        scroll.hasVerticalScroller = true
+        scroll.drawsBackground = false
+        scroll.borderType = .noBorder
+        tv.frame = NSRect(origin: .zero, size: scroll.contentSize)
+        tv.minSize = .zero
+        tv.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: .greatestFiniteMagnitude)
+        tv.isVerticallyResizable = true
+        tv.autoresizingMask = [.width]
+        scroll.documentView = tv
         return scroll
     }
 
-    func updateNSView(_ scroll: NSScrollView, context: Context) {
+    private static func textView(_ view: NSView) -> NSTextView? {
+        (view as? NSTextView) ?? ((view as? NSScrollView)?.documentView as? NSTextView)
+    }
+
+    func updateNSView(_ view: NSView, context: Context) {
         context.coordinator.parent = self
-        guard let tv = scroll.documentView as? NSTextView else { return }
+        guard let tv = Self.textView(view) else { return }
         if tv.string != text {
             tv.string = text
             if let storage = tv.textStorage { Style.apply(to: storage) }
         }
+    }
+
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: NSView, context: Context) -> CGSize? {
+        guard !scrolls, let tv = nsView as? NSTextView, let layout = tv.layoutManager, let container = tv.textContainer
+        else { return nil }
+        let width = proposal.width ?? 600
+        // Measure at the proposed width, then put the container back: SwiftUI probes with other widths, and the
+        // container only follows the view's own frame changes.
+        let current = container.containerSize
+        container.containerSize = NSSize(width: max(width - 2 * tv.textContainerInset.width, 40), height: .greatestFiniteMagnitude)
+        layout.ensureLayout(for: container)
+        let height = layout.usedRect(for: container).height + 2 * tv.textContainerInset.height
+        container.containerSize = current
+        return CGSize(width: width, height: max(ceil(height), 90))
     }
 
     final class Coordinator: NSObject, NSTextViewDelegate {
@@ -228,6 +254,13 @@ extension DiaryTextView: NSViewRepresentable {
 
 final class PasteNSTextView: NSTextView {
     var onImages: (([Data]) -> Void)?
+
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        if !isVerticallyResizable, let container = textContainer {   // the auto-height (non-scrolling) variant
+            container.containerSize = NSSize(width: max(newSize.width - 2 * textContainerInset.width, 40), height: .greatestFiniteMagnitude)
+        }
+    }
 
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)

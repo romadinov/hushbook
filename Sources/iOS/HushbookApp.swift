@@ -26,7 +26,11 @@ struct RootView: View {
 
     var body: some View {
         ZStack {
-            if store.phase == .unlocked { PhoneHome() } else { LockView() }
+            Group {
+                if store.phase == .unlocked { PhoneHome() } else { LockView() }
+            }
+            .tint(Theme.accent)
+            .id(store.journalColor)   // Theme.accent is read when views are built
             if scenePhase != .active && store.phase == .unlocked { PrivacyCover() }
         }
         .onChange(of: scenePhase) { _, phase in

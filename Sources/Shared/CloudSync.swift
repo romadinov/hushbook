@@ -15,6 +15,7 @@ struct SyncChanges: Sendable {
 ///   Vault  "vault"          salt, iterations, wrappedKey
 ///   Entry  "entry-<uuid>"   payload (sealed JSON), modified
 ///   Photo  "photo-<uuid>"   asset (sealed JPEG)
+///   Audio  "audio-<uuid>"   asset (sealed M4A)
 final class CloudSync: CKSyncEngineDelegate, @unchecked Sendable {
     static let containerID = "iCloud.com.romadinov.hushbook"
     let zoneID = CKRecordZone.ID(zoneName: "Diary", ownerName: CKCurrentUserDefaultName)
@@ -46,17 +47,23 @@ final class CloudSync: CKSyncEngineDelegate, @unchecked Sendable {
 
     func start() { _ = engine }
 
+    /// Demo diaries never touch iCloud.
+    var disabled = false
+
     func enqueueSave(_ name: String) {
+        guard !disabled else { return }
         engine.state.add(pendingRecordZoneChanges: [.saveRecord(CKRecord.ID(recordName: name, zoneID: zoneID))])
     }
 
     func enqueueDelete(_ name: String) {
+        guard !disabled else { return }
         engine.state.add(pendingRecordZoneChanges: [.deleteRecord(CKRecord.ID(recordName: name, zoneID: zoneID))])
     }
 
     func fetch() async throws { try await engine.fetchChanges() }
 
     func syncNow() async {
+        guard !disabled else { return }
         onActivity?(true, nil)
         do {
             try await engine.fetchChanges()
@@ -104,6 +111,7 @@ final class CloudSync: CKSyncEngineDelegate, @unchecked Sendable {
                 switch RecordName.parse(name) {
                 case .entry(let id): store.deleteEntry(id); result.deletedEntries.insert(id)
                 case .photo(let id): store.deletePhoto(id)
+                case .audio(let id): store.deleteAudio(id)
                 default: break
                 }
             }
@@ -187,6 +195,12 @@ final class CloudSync: CKSyncEngineDelegate, @unchecked Sendable {
             let r = record("Photo")
             r["asset"] = CKAsset(fileURL: url)
             return r
+        case .audio(let uuid):
+            let url = store.audioURL(uuid)
+            guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+            let r = record("Audio")
+            r["asset"] = CKAsset(fileURL: url)
+            return r
         case .unknown:
             return nil
         }
@@ -219,6 +233,9 @@ final class CloudSync: CKSyncEngineDelegate, @unchecked Sendable {
             guard let url = (record["asset"] as? CKAsset)?.fileURL else { return }
             store.importPhoto(from: url, id: id)
             result.photos.insert(id)
+        case .audio(let id):
+            guard let url = (record["asset"] as? CKAsset)?.fileURL else { return }
+            store.importAudio(from: url, id: id)
         case .unknown:
             return
         }

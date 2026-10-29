@@ -24,6 +24,9 @@ final class DiaryStore {
 
     var rememberDays: Int { didSet { UserDefaults.standard.set(rememberDays, forKey: "rememberDays") } }
     var autoLockSeconds: Int { didSet { UserDefaults.standard.set(autoLockSeconds, forKey: "autoLockSeconds") } }
+    var journalColor: JournalColor {
+        didSet { UserDefaults.standard.set(journalColor.rawValue, forKey: "journalColor") }
+    }
     var useBiometrics: Bool {
         didSet {
             UserDefaults.standard.set(useBiometrics, forKey: "useBiometrics")
@@ -48,6 +51,7 @@ final class DiaryStore {
         rememberDays = defaults.object(forKey: "rememberDays") as? Int ?? 7
         autoLockSeconds = defaults.object(forKey: "autoLockSeconds") as? Int ?? defaultAutoLock
         useBiometrics = defaults.object(forKey: "useBiometrics") as? Bool ?? true
+        journalColor = .current
         sync = CloudSync(store: local)
         phase = local.loadVault() == nil ? .checkingCloud : .locked
         imageCache.countLimit = 400
@@ -60,8 +64,8 @@ final class DiaryStore {
                 if let error { self.syncError = error } else if !busy { self.syncError = nil; self.lastSync = .now }
             }
         }
-        #if targetEnvironment(simulator)
-        if Self.demoMode != nil { Task { await seedDemo() }; return }
+        #if DEBUG
+        if Self.demoMode != nil { sync.disabled = true; Task { await seedDemo() }; return }
         #endif
         sync.start()
         if phase == .checkingCloud { Task { await lookForExistingDiary() } }
@@ -241,7 +245,10 @@ final class DiaryStore {
               let sealed = try? DiaryCrypto.seal(json, key: key, id: RecordName.entry(e.id)) else { return }
         local.saveEnvelope(EntryEnvelope(modified: e.modified, sealed: sealed), id: e.id)
         sync.enqueueSave(RecordName.entry(e.id))
-        if let old { Set(old.photoIDs).subtracting(e.photoIDs).forEach(deletePhoto) }
+        if let old {
+            Set(old.photoIDs).subtracting(e.photoIDs).forEach(deletePhoto)
+            Set(old.audio.map(\.id)).subtracting(e.audio.map(\.id)).forEach(deleteAudio)
+        }
         upsert(e)
     }
 
@@ -253,12 +260,15 @@ final class DiaryStore {
 
     func delete(_ entry: Entry) {
         var photos = Set(entry.photoIDs)
+        var audio = Set(entry.audio.map(\.id))
         if let key, let saved = local.envelope(entry.id).flatMap({ decrypt($0, id: entry.id, key: key) }) {
             photos.formUnion(saved.photoIDs)
+            audio.formUnion(saved.audio.map(\.id))
         }
         local.deleteEntry(entry.id)
         sync.enqueueDelete(RecordName.entry(entry.id))
         photos.forEach(deletePhoto)
+        audio.forEach(deleteAudio)
         entries.removeAll { $0.id == entry.id }
     }
 
@@ -303,6 +313,98 @@ final class DiaryStore {
         guard let box, self.key != nil else { return nil }
         imageCache.setObject(box, forKey: cacheKey)
         return box.image
+    }
+
+    // MARK: Voice notes
+
+    /// Transcripts that finished while their entry was open in an editor; the editor folds them into its draft.
+    private(set) var finishedTranscripts: [UUID: (text: String, language: String)] = [:]
+    private(set) var transcribing: Set<UUID> = []
+    @ObservationIgnored private var openEditors: [UUID: Int] = [:]
+
+    /// Encrypts a recorded file, deletes the plaintext, and starts transcribing. Returns the note to add to the entry.
+    func addVoiceNote(file: URL, duration: TimeInterval, entryID: UUID) async -> AudioNote? {
+        guard let key else { try? FileManager.default.removeItem(at: file); return nil }
+        let id = UUID()
+        let result = await Task.detached { () -> (Data, [Float])? in
+            defer { try? FileManager.default.removeItem(at: file) }
+            guard let data = try? Data(contentsOf: file),
+                  let sealed = try? DiaryCrypto.seal(data, key: key, id: RecordName.audio(id)) else { return nil }
+            return (sealed, (try? AudioSamples.load16k(file)) ?? [])
+        }.value
+        guard let (sealed, samples) = result else { return nil }
+        local.saveAudio(sealed, id: id)
+        sync.enqueueSave(RecordName.audio(id))
+        transcribe(samples, audio: id, entry: entryID)
+        return AudioNote(id: id, duration: duration)
+    }
+
+    private func transcribe(_ samples: [Float], audio: UUID, entry: UUID) {
+        transcribing.insert(audio)
+        Task {
+            let result = await Transcriber.shared.transcribe(samples)
+            transcribing.remove(audio)
+            guard key != nil else { return }   // locked meanwhile; the note stays untranscribed
+            if openEditors[entry, default: 0] > 0 {
+                finishedTranscripts[audio] = result
+            } else if var e = self.entry(entry) {
+                e.apply(transcript: result.text, to: audio)
+                if let i = e.audio.firstIndex(where: { $0.id == audio }) { e.audio[i].language = result.language }
+                save(e)
+            }
+        }
+    }
+
+    /// Re-runs transcription for a saved voice note (e.g. after the models were downloaded).
+    func retranscribe(_ note: AudioNote, entry: UUID) {
+        guard let key, !transcribing.contains(note.id) else { return }
+        let local = self.local
+        Task {
+            let samples = await Task.detached { () -> [Float] in
+                guard let sealed = local.sealedAudio(note.id),
+                      let data = try? DiaryCrypto.open(sealed, key: key, id: RecordName.audio(note.id)) else { return [] }
+                // AVAudioFile needs a file: decode from a temporary copy that is deleted immediately.
+                let url = FileManager.default.temporaryDirectory.appendingPathComponent("voice-\(UUID().uuidString).m4a")
+                defer { try? FileManager.default.removeItem(at: url) }
+                guard (try? data.write(to: url)) != nil else { return [] }
+                return (try? AudioSamples.load16k(url)) ?? []
+            }.value
+            if !samples.isEmpty { transcribe(samples, audio: note.id, entry: entry) }
+        }
+    }
+
+    func takeTranscript(_ audio: UUID) -> (text: String, language: String)? {
+        finishedTranscripts.removeValue(forKey: audio)
+    }
+
+    func editorOpened(_ entry: UUID) { openEditors[entry, default: 0] += 1 }
+
+    /// After the editor saved its draft: apply transcripts it didn't get to.
+    func editorClosed(_ entry: UUID) {
+        openEditors[entry, default: 1] -= 1
+        guard openEditors[entry, default: 0] <= 0, var e = self.entry(entry) else { return }
+        var changed = false
+        for note in e.audio {
+            if let result = finishedTranscripts.removeValue(forKey: note.id) {
+                e.apply(transcript: result.text, to: note.id)
+                changed = true
+            }
+        }
+        if changed { save(e) }
+    }
+
+    /// Decrypted voice note, in memory only, for playback.
+    func audioData(_ id: UUID) async -> Data? {
+        guard let key else { return nil }
+        let local = self.local
+        return await Task.detached {
+            local.sealedAudio(id).flatMap { try? DiaryCrypto.open($0, key: key, id: RecordName.audio(id)) }
+        }.value
+    }
+
+    func deleteAudio(_ id: UUID) {
+        local.deleteAudio(id)
+        sync.enqueueDelete(RecordName.audio(id))
     }
 
     // MARK: Day One import
@@ -388,7 +490,7 @@ final class DiaryStore {
 
 extension DiaryStore {
     static var demoScreen: String? {
-        #if targetEnvironment(simulator)
+        #if DEBUG
         demoMode
         #else
         nil

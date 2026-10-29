@@ -6,6 +6,7 @@ import CloudKit
 ///     Hushbook/vault.json          salt + wrapped diary key
 ///     Hushbook/entries/<id>.json   EntryEnvelope (sealed entry)
 ///     Hushbook/photos/<id>.bin     sealed JPEG
+///     Hushbook/audio/<id>.bin      sealed M4A voice note
 ///     Hushbook/ck/<record>.sys     CloudKit system fields (change tags)
 ///     Hushbook/sync-state.json     CKSyncEngine state
 final class LocalStore: @unchecked Sendable {
@@ -16,8 +17,12 @@ final class LocalStore: @unchecked Sendable {
 
     init() {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        root = base.appendingPathComponent("Hushbook", isDirectory: true)
-        for dir in ["entries", "photos", "ck"] {
+        var dir = base.appendingPathComponent("Hushbook", isDirectory: true)
+        #if DEBUG
+        if let demo = ProcessInfo.processInfo.environment["HUSHBOOK_DATA_DIR"] { dir = URL(fileURLWithPath: demo, isDirectory: true) }
+        #endif
+        root = dir
+        for dir in ["entries", "photos", "audio", "ck"] {
             try? FileManager.default.createDirectory(at: root.appendingPathComponent(dir), withIntermediateDirectories: true)
         }
         #if os(iOS)
@@ -108,6 +113,32 @@ final class LocalStore: @unchecked Sendable {
         }
     }
 
+    // MARK: Voice notes
+
+    func audioURL(_ id: UUID) -> URL { root.appendingPathComponent("audio/\(id.uuidString).bin") }
+
+    func sealedAudio(_ id: UUID) -> Data? { locked { try? Data(contentsOf: audioURL(id)) } }
+
+    func saveAudio(_ sealed: Data, id: UUID) { locked { write(sealed, to: audioURL(id)) } }
+
+    func importAudio(from url: URL, id: UUID) {
+        locked {
+            let dest = audioURL(id)
+            try? FileManager.default.removeItem(at: dest)
+            try? FileManager.default.copyItem(at: url, to: dest)
+        }
+    }
+
+    func deleteAudio(_ id: UUID) { locked { try? FileManager.default.removeItem(at: audioURL(id)) } }
+
+    func allAudioIDs() -> [UUID] {
+        locked {
+            let dir = root.appendingPathComponent("audio")
+            return ((try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? [])
+                .compactMap { UUID(uuidString: ($0 as NSString).deletingPathExtension) }
+        }
+    }
+
     // MARK: CloudKit metadata
 
     private func sysURL(_ name: String) -> URL { root.appendingPathComponent("ck/\(name).sys") }
@@ -157,6 +188,7 @@ final class LocalStore: @unchecked Sendable {
     /// Every record this device holds, for re-uploading after the iCloud zone was lost or the account changed.
     func allRecordNames() -> [String] {
         var names = allEnvelopes().keys.map(RecordName.entry) + allPhotoIDs().map(RecordName.photo)
+            + allAudioIDs().map(RecordName.audio)
         if loadVault() != nil { names.append(RecordName.vault) }
         return names
     }

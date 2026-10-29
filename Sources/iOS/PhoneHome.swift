@@ -25,7 +25,7 @@ struct PhoneHome: View {
             }
             .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(Theme.blue, for: .navigationBar)
+            .toolbarBackground(Theme.accent, for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbarColorScheme(.dark, for: .navigationBar)
             .toolbar { toolbar }
@@ -40,7 +40,7 @@ struct PhoneHome: View {
                 }
             }
         }
-        .tint(Theme.blue)
+        .tint(Theme.accent)
         .task {
             if DiaryStore.demoScreen == "editor", let e = store.saved.first { path = [.entry(e.id, isNew: false)] }
             if DiaryStore.demoScreen == "new" { newEntry() }
@@ -109,7 +109,7 @@ struct PhoneHome: View {
         .padding(.horizontal, 20)
         .padding(.top, 4)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Theme.blue)
+        .background(Theme.accent)
     }
 
     private func stat(_ value: Int, _ label: String) -> some View {
@@ -224,8 +224,8 @@ struct PhoneHome: View {
                 .font(.system(size: 26, weight: .semibold))
                 .foregroundStyle(.white)
                 .frame(width: 62, height: 62)
-                .background(Theme.blue, in: Circle())
-                .shadow(color: Theme.blueDeep.opacity(0.45), radius: 10, y: 4)
+                .background(Theme.accent, in: Circle())
+                .shadow(color: Theme.accentDeep.opacity(0.45), radius: 10, y: 4)
         } primaryAction: {
             newEntry()
         }

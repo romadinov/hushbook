@@ -28,12 +28,13 @@ struct MacHome: View {
                     ScrollView { MediaGrid(entries: visible, columns: 4) { selection = $0.id }.padding(2) }
                 }
             }
-            .navigationSplitViewColumnWidth(min: 320, ideal: 400)
+            .frame(minWidth: 340)   // the split view alone let this column shrink to ~200 pt
+            .navigationSplitViewColumnWidth(min: 340, ideal: 400, max: 560)
             .navigationTitle(title)
             .navigationSubtitle(subtitle)
             .searchable(text: $search, placement: .toolbar, prompt: "Search")
             .toolbar {
-                ToolbarItem {
+                ToolbarItem(placement: .navigation) {
                     Picker("View", selection: $layout) {
                         ForEach(DiaryLayout.allCases) { Image(systemName: $0.symbol).help($0.rawValue).tag($0) }
                     }
@@ -48,19 +49,35 @@ struct MacHome: View {
             if let id = selection, let entry = store.entry(id) {
                 EntryEditor(entry: entry, autofocus: id == newEntryID) { selection = nil }
                     .id(id)
+                    .navigationSplitViewColumnWidth(min: 380, ideal: 560)
             } else {
                 ContentUnavailableView("No Entry Selected", systemImage: "book.closed",
                                        description: Text("Choose an entry, or press ⌘N to write a new one."))
             }
         }
-        .tint(Theme.blue)
+        .navigationSplitViewStyle(.balanced)
+        .tint(Theme.accent)
         .onReceive(NotificationCenter.default.publisher(for: .newEntry)) { _ in newEntry() }
         .alert("Day One Import", isPresented: Binding(get: { store.importResult != nil }, set: { if !$0 { store.importResult = nil } })) {
             Button("OK") { store.importResult = nil }
         } message: {
             Text(store.importResult ?? "")
         }
-        .onAppear { if selection == nil { selection = visible.first?.id } }
+        .onAppear {
+            if selection == nil { selection = visible.first?.id }
+            if let demo = DiaryStore.demoScreen, let layout = DiaryLayout.allCases.first(where: { $0.rawValue.lowercased() == demo }) {
+                self.layout = layout
+            }
+            #if DEBUG
+            if DiaryStore.demoScreen == "voice" {
+                Task {
+                    try? await Task.sleep(for: .seconds(1))
+                    if let id = await store.seedDemoVoiceNote() { selection = id }
+                }
+            }
+            #endif
+        }
+        .onChange(of: store.saved.count) { _, _ in if selection == nil { selection = visible.first?.id } }
         .confirmationDialog("Delete this entry?", isPresented: Binding(get: { toDelete != nil }, set: { if !$0 { toDelete = nil } })) {
             Button("Delete Entry", role: .destructive) {
                 if let toDelete { if selection == toDelete.id { selection = nil }; store.delete(toDelete) }
@@ -84,17 +101,21 @@ struct MacHome: View {
 
     private var sidebar: some View {
         List(selection: $filter) {
-            Section("Hushbook") {
-                Label("All Entries", systemImage: "book").badge(store.saved.count).tag(DiaryFilter.all)
-                Label("Starred", systemImage: "star").badge(store.entries(.starred).count).tag(DiaryFilter.starred)
-                Label("On This Day", systemImage: "clock.arrow.circlepath").badge(store.entries(.onThisDay).count)
-                    .tag(DiaryFilter.onThisDay)
+            Section {
+                SidebarRow(title: "On This Day", symbol: "calendar.badge.clock", color: .orange,
+                           count: store.entries(.onThisDay).count).tag(DiaryFilter.onThisDay)
+                SidebarRow(title: "Starred", symbol: "star.fill", color: .yellow,
+                           count: store.entries(.starred).count).tag(DiaryFilter.starred)
+            }
+            Section("Journals") {
+                SidebarRow(title: "All Entries", symbol: "book.closed.fill", color: Theme.accent, count: store.saved.count)
+                    .tag(DiaryFilter.all)
             }
             let tags = store.allTags
             if !tags.isEmpty {
                 Section("Tags") {
                     ForEach(tags, id: \.name) { tag in
-                        Label(tag.name, systemImage: "number").badge(tag.count).tag(DiaryFilter.tag(tag.name))
+                        SidebarRow(title: tag.name, symbol: "number", color: .gray, count: tag.count).tag(DiaryFilter.tag(tag.name))
                     }
                 }
             }
@@ -124,22 +145,45 @@ struct MacHome: View {
         return "iCloud"
     }
 
+    /// Day One's list: bold month headers that stay pinned, rows filled with the journal colour when selected.
     private var timeline: some View {
-        List(selection: $selection) {
-            ForEach(monthSections(visible)) { section in
-                Section(section.title) {
-                    ForEach(Array(section.entries.enumerated()), id: \.element.id) { i, entry in
-                        let sameDay = i > 0 && Calendar.current.isDate(section.entries[i - 1].date, inSameDayAs: entry.date)
-                        EntryRow(entry: entry, showDate: !sameDay)
-                            .tag(entry.id)
-                            .contextMenu {
-                                Button(entry.starred ? "Unstar" : "Star") { store.toggleStar(entry) }
-                                Divider()
-                                Button("Delete Entry…", role: .destructive) { toDelete = entry }
+        let sections = monthSections(visible)
+        return ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 2, pinnedViews: [.sectionHeaders]) {
+                    ForEach(sections) { section in
+                        Section {
+                            ForEach(Array(section.entries.enumerated()), id: \.element.id) { i, entry in
+                                let sameDay = i > 0 && Calendar.current.isDate(section.entries[i - 1].date, inSameDayAs: entry.date)
+                                EntryRow(entry: entry, showDate: !sameDay, selected: entry.id == selection)
+                                    .padding(.horizontal, entry.id == selection ? 0 : 10)
+                                    .id(entry.id)
+                                    .onTapGesture { selection = entry.id }
+                                    .contextMenu {
+                                        Button(entry.starred ? "Unstar" : "Star") { store.toggleStar(entry) }
+                                        Divider()
+                                        Button("Delete Entry…", role: .destructive) { toDelete = entry }
+                                    }
+                                if i < section.entries.count - 1 { Divider().padding(.leading, 74) }
                             }
+                        } header: {
+                            Text(section.title)
+                                .font(.title2.bold())
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 8)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(.background)
+                        }
                     }
                 }
+                .padding(.horizontal, 10)
+                .padding(.bottom, 12)
             }
+            .focusable()
+            .focusEffectDisabled()
+            .onKeyPress(.downArrow) { move(1, proxy); return .handled }
+            .onKeyPress(.upArrow) { move(-1, proxy); return .handled }
+            .onDeleteCommand { if let id = selection, let entry = store.entry(id) { toDelete = entry } }
         }
         .overlay {
             if visible.isEmpty {
@@ -147,7 +191,15 @@ struct MacHome: View {
                                        description: Text(search.isEmpty ? "Press ⌘N to write your first entry." : ""))
             }
         }
-        .onDeleteCommand { if let id = selection, let entry = store.entry(id) { toDelete = entry } }
+    }
+
+    private func move(_ delta: Int, _ proxy: ScrollViewProxy) {
+        let ids = monthSections(visible).flatMap(\.entries).map(\.id)
+        guard !ids.isEmpty else { return }
+        let index = selection.flatMap { ids.firstIndex(of: $0) }.map { $0 + delta } ?? 0
+        let id = ids[max(0, min(ids.count - 1, index))]
+        selection = id
+        withAnimation(.easeOut(duration: 0.15)) { proxy.scrollTo(id) }
     }
 
     private func selectDay(_ day: Date) {
@@ -165,5 +217,25 @@ struct MacHome: View {
         layout = .list
         newEntryID = entry.id
         selection = entry.id
+    }
+}
+
+private struct SidebarRow: View {
+    let title: String
+    let symbol: String
+    let color: Color
+    let count: Int
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: symbol)
+                .font(.system(size: 11, weight: .bold))
+                .foregroundStyle(.white)
+                .frame(width: 22, height: 22)
+                .background(color, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+            Text(title).lineLimit(1)
+            Spacer()
+            Text("\(count)").foregroundStyle(.secondary).monospacedDigit()
+        }
     }
 }

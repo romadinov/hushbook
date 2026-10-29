@@ -22,7 +22,7 @@ struct LockView: View {
                 ZStack(alignment: .bottomTrailing) {
                     Image(systemName: "book.closed.fill").font(.system(size: 64))
                     Image(systemName: "lock.fill").font(.system(size: 24))
-                        .padding(7).background(Theme.blueDeep, in: Circle()).offset(x: 14, y: 8)
+                        .padding(7).background(Theme.accentDeep, in: Circle()).offset(x: 14, y: 8)
                 }
                 Text("Hushbook").font(.largeTitle.bold())
                 switch store.phase {
@@ -115,7 +115,8 @@ struct LockView: View {
     }
 
     private func autoPrompt() async {
-        guard store.phase == .locked, autoPromptedLock != store.lockCount, store.canUseBiometrics else { return }
+        guard store.phase == .locked, autoPromptedLock != store.lockCount, store.canUseBiometrics,
+              !CommandLine.arguments.contains(where: { $0.hasPrefix("--") && $0.hasSuffix("-test") }) else { return }
         #if os(iOS)
         guard scenePhase == .active else { return }   // wait until the app is on screen
         #endif
@@ -167,7 +168,7 @@ struct PrimaryButton: ButtonStyle {
         configuration.label
             .font(.headline)
             .padding(.vertical, 12)
-            .foregroundStyle(Theme.blueDeep)
+            .foregroundStyle(Theme.accentDeep)
             .background(.white.opacity(enabled ? (configuration.isPressed ? 0.8 : 1) : 0.5),
                         in: RoundedRectangle(cornerRadius: 12, style: .continuous))
     }

@@ -16,5 +16,7 @@
 	<array>
 		<string>$(AppIdentifierPrefix)com.romadinov.hushbook.mac</string>
 	</array>
+	<key>com.apple.security.device.audio-input</key>
+	<true/>
 </dict>
 </plist>
