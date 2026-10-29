@@ -6,7 +6,7 @@ import UniformTypeIdentifiers
 struct DiaryTextView {
     @Binding var text: String
     var autofocus = false
-    /// Mac only: false makes the text grow with its content, to sit in a larger scroll view with photos below.
+    /// False makes the text grow with its content, to sit in a larger scroll view with photos below it.
     var scrolls = true
     var onImages: ([Data]) -> Void
 }
@@ -84,16 +84,28 @@ extension DiaryTextView: UIViewRepresentable {
         let tv = PasteTextView()
         tv.delegate = context.coordinator
         tv.backgroundColor = .clear
-        tv.textContainerInset = UIEdgeInsets(top: 14, left: 18, bottom: 60, right: 18)
+        tv.textContainerInset = UIEdgeInsets(top: 14, left: 18, bottom: scrolls ? 60 : 14, right: 18)
         tv.textContainer.lineFragmentPadding = 0
-        tv.alwaysBounceVertical = true
-        tv.keyboardDismissMode = .interactive
+        if scrolls {
+            tv.alwaysBounceVertical = true
+            tv.keyboardDismissMode = .interactive
+        } else {
+            tv.isScrollEnabled = false
+            tv.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        }
         tv.text = text
         Style.apply(to: tv.textStorage)
         tv.typingAttributes = Style.typingAttributes(atTitle: text.isEmpty)
         tv.onImages = { [weak coordinator = context.coordinator] in coordinator?.parent.onImages($0) }
         if autofocus { DispatchQueue.main.async { tv.becomeFirstResponder() } }
         return tv
+    }
+
+    func sizeThatFits(_ proposal: ProposedViewSize, uiView tv: PasteTextView, context: Context) -> CGSize? {
+        guard !scrolls else { return nil }
+        let width = proposal.width ?? 375
+        let fitted = tv.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude))
+        return CGSize(width: width, height: max(fitted.height, 120))
     }
 
     func updateUIView(_ tv: PasteTextView, context: Context) {
@@ -117,6 +129,20 @@ extension DiaryTextView: UIViewRepresentable {
             }
             parent.text = tv.text
             (tv as? PasteTextView)?.updatePlaceholder()
+            revealCaret(tv)
+        }
+
+        /// In the non-scrolling variant the surrounding scroll view must follow the caret as you type.
+        private func revealCaret(_ tv: UITextView) {
+            guard !tv.isScrollEnabled else { return }
+            DispatchQueue.main.async {
+                guard let end = tv.selectedTextRange?.end else { return }
+                var view = tv.superview
+                while let v = view, !(v is UIScrollView) { view = v.superview }
+                guard let scroll = view as? UIScrollView else { return }
+                let caret = tv.caretRect(for: end).insetBy(dx: 0, dy: -28)
+                scroll.scrollRectToVisible(tv.convert(caret, to: scroll), animated: false)
+            }
         }
 
         func textViewDidChangeSelection(_ tv: UITextView) {
@@ -289,10 +315,25 @@ final class PasteNSTextView: NSTextView {
 
     override var acceptableDragTypes: [NSPasteboard.PasteboardType] {
         super.acceptableDragTypes + Self.imageTypes + [.fileURL]
+            + NSFilePromiseReceiver.readableDraggedTypes.map { NSPasteboard.PasteboardType($0) }
     }
 
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
-        let found = images(on: sender.draggingPasteboard)
+        let pasteboard = sender.draggingPasteboard
+        // The Photos app drags file promises: it writes the photos out only when the drop happens.
+        if let promises = pasteboard.readObjects(forClasses: [NSFilePromiseReceiver.self]) as? [NSFilePromiseReceiver],
+           !promises.isEmpty {
+            let folder = FileManager.default.temporaryDirectory.appendingPathComponent("drop-\(UUID().uuidString)")
+            try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            for promise in promises {
+                promise.receivePromisedFiles(atDestination: folder, options: [:], operationQueue: .main) { [weak self] url, error in
+                    if error == nil, let data = try? Data(contentsOf: url) { self?.onImages?([data]) }
+                    try? FileManager.default.removeItem(at: url)   // a plaintext copy of the photo
+                }
+            }
+            return true
+        }
+        let found = images(on: pasteboard)
         if found.isEmpty { return super.performDragOperation(sender) }
         onImages?(found)
         return true

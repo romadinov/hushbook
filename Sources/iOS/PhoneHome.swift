@@ -50,7 +50,7 @@ struct PhoneHome: View {
         }
         .tint(Theme.accent)
         .task {
-            if DiaryStore.demoScreen == "editor", let e = store.saved.first { path = [.entry(e.id, isNew: false)] }
+            if DiaryStore.demoScreen == "editor", let e = store.saved.first(where: { !$0.photoIDs.isEmpty }) ?? store.saved.first { path = [.entry(e.id, isNew: false)] }
             if DiaryStore.demoScreen == "new" { newEntry() }
         }
         .sheet(isPresented: $showSettings) { NavigationStack { SettingsView().toolbar { Button("Done") { showSettings = false } } } }

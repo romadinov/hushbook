@@ -14,6 +14,9 @@ struct EntryEditor: View {
     @State private var draft: Entry
     @State private var addedPhotos: Set<UUID> = []
     @State private var pickerItems: [PhotosPickerItem] = []
+    @State private var showPhotoPicker = false
+    @State private var showFileImporter = false
+    @State private var photoError: String?
     @State private var showCamera = false
     @State private var showDate = false
     @State private var confirmDelete = false
@@ -72,12 +75,24 @@ struct EntryEditor: View {
                 actionBar
             }
             #else
-            photos
-            voiceNotes.padding(.horizontal, 18).padding(.top, draft.audio.isEmpty ? 0 : 10)
-            DiaryTextView(text: $draft.text, autofocus: autofocus && draft.text.isEmpty, onImages: add)
-            if let location = draft.location {
-                LocationRow(location: location).padding(.horizontal, 18).padding(.top, 6)
+            // Day One for iPhone: text first, then photos, voice notes and the map, all in one scroll.
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    DiaryTextView(text: $draft.text, autofocus: autofocus && draft.text.isEmpty, scrolls: false, onImages: add)
+                    ForEach(draft.photoIDs, id: \.self) { id in
+                        InlinePhoto(id: id)
+                            .onTapGesture { viewing = PhotoRef(id: id) }
+                            .contextMenu { photoMenu(id) }
+                            .padding(.horizontal, 18)
+                    }
+                    voiceNotes.padding(.horizontal, 18)
+                    if let location = draft.location {
+                        LocationCard(location: location, height: 130).padding(.horizontal, 18)
+                    }
+                }
+                .padding(.bottom, 16)
             }
+            .scrollDismissesKeyboard(.interactively)
             tagBar
             #endif
         }
@@ -123,12 +138,34 @@ struct EntryEditor: View {
             guard !items.isEmpty else { return }
             pickerItems = []
             Task {
+                var failures: [String] = []
                 for item in items {
-                    if let data = try? await item.loadTransferable(type: Data.self) { add([data]) }
+                    do {
+                        if let picked = try await item.loadTransferable(type: PickedImage.self) { add([picked.data]) }
+                        else { failures.append("A photo couldn't be read.") }
+                    } catch {
+                        failures.append(error.localizedDescription)
+                    }
                 }
+                if !failures.isEmpty { photoError = Array(Set(failures)).joined(separator: "\n") }
             }
         }
         .onChange(of: draft) { _, _ in scheduleSave() }
+        .photosPicker(isPresented: $showPhotoPicker, selection: $pickerItems, maxSelectionCount: 20, matching: .images,
+                      preferredItemEncoding: .compatible)
+        .fileImporter(isPresented: $showFileImporter, allowedContentTypes: [.image], allowsMultipleSelection: true) { result in
+            guard case .success(let urls) = result else { return }
+            add(urls.compactMap { url in
+                let scoped = url.startAccessingSecurityScopedResource()
+                defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+                return try? Data(contentsOf: url)
+            })
+        }
+        .alert("Couldn't Add Photo", isPresented: Binding(get: { photoError != nil }, set: { if !$0 { photoError = nil } })) {
+            Button("OK") { photoError = nil }
+        } message: {
+            Text(photoError ?? "")
+        }
         .onDisappear {
             saveTask?.cancel()
             recorder.cancel()
@@ -205,10 +242,19 @@ struct EntryEditor: View {
             Button(action: startRecording) { Image(systemName: "mic") }
                 .help("Record a voice note")
                 .disabled(recorder.isRecording)
-            PhotosPicker(selection: $pickerItems, maxSelectionCount: 20, matching: .images) {
+            #if os(macOS)
+            Menu {
+                Button("Photos Library…") { showPhotoPicker = true }
+                Button("Choose Files…") { showFileImporter = true }
+            } label: {
                 Image(systemName: "photo.on.rectangle.angled")
             }
-            .help("Add photos from your library")
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .help("Add photos from the Photos library or from files; you can also paste or drag them in")
+            #else
+            Button { showPhotoPicker = true } label: { Image(systemName: "photo.on.rectangle.angled") }
+            #endif
             #if os(iOS)
             if UIImagePickerController.isSourceTypeAvailable(.camera) {
                 Button { showCamera = true } label: { Image(systemName: "camera") }
@@ -243,29 +289,6 @@ struct EntryEditor: View {
         #if os(iOS)
         .overlay(alignment: .top) { Divider() }
         #endif
-    }
-
-    @ViewBuilder private var photos: some View {
-        if draft.photoIDs.count == 1, let id = draft.photoIDs.first {
-            PhotoThumb(id: id, cornerRadius: 0, maxPixel: 1600)
-                .frame(height: 260)
-                .frame(maxWidth: .infinity)
-                .clipped()
-                .onTapGesture { viewing = PhotoRef(id: id) }
-                .contextMenu { photoMenu(id) }
-        } else if !draft.photoIDs.isEmpty {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    ForEach(draft.photoIDs, id: \.self) { id in
-                        PhotoThumb(id: id, side: 130, cornerRadius: 10)
-                            .onTapGesture { viewing = PhotoRef(id: id) }
-                            .contextMenu { photoMenu(id) }
-                    }
-                }
-                .padding(.horizontal, 18)
-                .padding(.vertical, 12)
-            }
-        }
     }
 
     @ViewBuilder private func photoMenu(_ id: UUID) -> some View {
@@ -446,5 +469,16 @@ struct InlinePhoto: View {
         .frame(maxWidth: .infinity)
         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         .task(id: "\(id)-\(store.photoRevision)") { image = await store.image(id, maxPixel: 2000) }
+    }
+}
+
+/// A picked photo's bytes. Accepts both in-memory data and a file copy: the Mac picker often only offers the latter,
+/// which `loadTransferable(type: Data.self)` doesn't take.
+struct PickedImage: Transferable {
+    let data: Data
+
+    static var transferRepresentation: some TransferRepresentation {
+        FileRepresentation(importedContentType: .image) { PickedImage(data: try Data(contentsOf: $0.file)) }
+        DataRepresentation(importedContentType: .image) { PickedImage(data: $0) }
     }
 }
