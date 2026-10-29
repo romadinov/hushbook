@@ -55,6 +55,11 @@ struct MacHome: View {
         }
         .tint(Theme.blue)
         .onReceive(NotificationCenter.default.publisher(for: .newEntry)) { _ in newEntry() }
+        .alert("Day One Import", isPresented: Binding(get: { store.importResult != nil }, set: { if !$0 { store.importResult = nil } })) {
+            Button("OK") { store.importResult = nil }
+        } message: {
+            Text(store.importResult ?? "")
+        }
         .onAppear { if selection == nil { selection = visible.first?.id } }
         .confirmationDialog("Delete this entry?", isPresented: Binding(get: { toDelete != nil }, set: { if !$0 { toDelete = nil } })) {
             Button("Delete Entry", role: .destructive) {
@@ -97,8 +102,13 @@ struct MacHome: View {
         .navigationSplitViewColumnWidth(min: 180, ideal: 210)
         .safeAreaInset(edge: .bottom) {
             HStack {
+                if let progress = store.importProgress {
+                    ProgressView(value: Double(progress.done), total: Double(max(progress.total, 1))).frame(width: 60)
+                    Text("Importing \(progress.done) of \(progress.total)").font(.caption).foregroundStyle(.secondary)
+                } else {
                 if store.syncBusy { ProgressView().controlSize(.small) }
                 Text(syncText).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                }
                 Spacer()
                 Button { store.lock() } label: { Image(systemName: "lock") }
                     .buttonStyle(.borderless).help("Lock (⌘L)")

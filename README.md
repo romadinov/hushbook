@@ -19,6 +19,14 @@ A private, encrypted diary for Mac and iPhone, styled after Day One, synced thro
   iCloud Keychain: the device passcode opens those.
 - Photos are re-encoded as JPEG, which drops EXIF/GPS metadata.
 
+## Importing from Day One
+
+In Day One (Mac): **File → Export → JSON** (choose all journals). Then in Hushbook (Mac, unlocked):
+**File → Import from Day One…** and pick the .zip. Text, dates, tags, starred and photos come across. Day One
+Markdown is converted to plain text, and inline photos move to the entry's photo strip. Importing the same export
+again skips entries that are already there. Videos, audio, location and weather are not imported. Imported entries
+sync to the iPhone. Delete the export zip afterwards: it is not encrypted.
+
 ## Sync
 
 `CKSyncEngine`, private database, zone `Diary`, container `iCloud.com.romadinov.hushbook`. Records: `Vault`

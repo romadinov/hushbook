@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import UniformTypeIdentifiers
 
 extension Notification.Name {
     static let newEntry = Notification.Name("HushbookNewEntry")
@@ -35,6 +36,31 @@ struct HushbookMacApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
     @State private var store = DiaryStore()
 
+    /// Picks a Day One export (.zip or unzipped folder), unzips it to a temporary folder and imports it.
+    @MainActor private func importDayOne() async {
+        let panel = NSOpenPanel()
+        panel.title = "Choose a Day One JSON export"
+        panel.message = "In Day One: File → Export → JSON. Choose the .zip it creates (or the unzipped folder)."
+        panel.allowedContentTypes = [.zip, .folder]
+        panel.canChooseDirectories = true
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        var folder = url
+        var temp: URL?
+        if url.pathExtension.lowercased() == "zip" {
+            let dir = FileManager.default.temporaryDirectory.appendingPathComponent("hushbook-import-\(UUID().uuidString)")
+            temp = dir
+            let ditto = Process()
+            ditto.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
+            ditto.arguments = ["-x", "-k", url.path, dir.path]
+            try? ditto.run()
+            await Task.detached { ditto.waitUntilExit() }.value
+            guard ditto.terminationStatus == 0 else { store.importResult = "Couldn't unzip \(url.lastPathComponent)."; return }
+            folder = dir
+        }
+        await store.importDayOne(folder: folder)
+        if let temp { try? FileManager.default.removeItem(at: temp) }   // the unzipped copy is plaintext
+    }
+
     var body: some Scene {
         Window("Hushbook", id: "main") {
             Group {
@@ -49,6 +75,10 @@ struct HushbookMacApp: App {
                 Button("New Entry") { NotificationCenter.default.post(name: .newEntry, object: nil) }
                     .keyboardShortcut("n")
                     .disabled(store.phase != .unlocked)
+            }
+            CommandGroup(replacing: .importExport) {
+                Button("Import from Day One…") { Task { await importDayOne() } }
+                    .disabled(store.phase != .unlocked || store.importProgress != nil)
             }
             CommandMenu("Diary") {
                 Button("Lock") { store.lock() }

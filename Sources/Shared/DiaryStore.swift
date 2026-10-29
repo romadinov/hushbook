@@ -19,6 +19,8 @@ final class DiaryStore {
     private(set) var syncBusy = false
     private(set) var syncError: String?
     private(set) var lastSync: Date?
+    private(set) var importProgress: (done: Int, total: Int)?
+    var importResult: String?
 
     var rememberDays: Int { didSet { UserDefaults.standard.set(rememberDays, forKey: "rememberDays") } }
     var autoLockSeconds: Int { didSet { UserDefaults.standard.set(autoLockSeconds, forKey: "autoLockSeconds") } }
@@ -265,9 +267,8 @@ final class DiaryStore {
     // MARK: Photos
 
     /// Encrypts and stores an image; returns its id for the entry's photo list.
-    func addPhoto(_ data: Data) async -> UUID? {
+    func addPhoto(_ data: Data, id: UUID = UUID()) async -> UUID? {
         guard let key else { return nil }
-        let id = UUID()
         let sealed = await Task.detached { () -> Data? in
             guard let jpeg = Images.normalized(data) else { return nil }
             return try? DiaryCrypto.seal(jpeg, key: key, id: RecordName.photo(id))
@@ -298,6 +299,52 @@ final class DiaryStore {
         guard let box, self.key != nil else { return nil }
         imageCache.setObject(box, forKey: cacheKey)
         return box.image
+    }
+
+    // MARK: Day One import
+
+    /// Imports an unzipped Day One JSON export. Entries already imported (same Day One id) are skipped.
+    func importDayOne(folder: URL) async {
+        guard key != nil else { return }
+        let items: [DayOneImport.Item]
+        do { items = try await Task.detached { try DayOneImport.read(folder: folder) }.value }
+        catch { importResult = "Couldn't read the export: \(error.localizedDescription)"; return }
+        guard !items.isEmpty else {
+            importResult = "No Day One entries found. In Day One choose File → Export → JSON, then import that zip."
+            return
+        }
+        var report = DayOneImport.Report()
+        importProgress = (0, items.count)
+        for (i, item) in items.enumerated() {
+            importProgress = (i, items.count)
+            guard key != nil else { break }   // locked mid-import
+            if local.envelope(item.entry.id) != nil { report.skipped += 1; continue }
+            var entry = item.entry
+            entry.photoIDs = []
+            for photo in item.photos {
+                guard let file = photo.file, let data = try? Data(contentsOf: file) else { report.missingPhotos += 1; continue }
+                var stored = local.sealedPhoto(photo.id) != nil
+                if !stored { stored = await addPhoto(data, id: photo.id) != nil }
+                if stored {
+                    entry.photoIDs.append(photo.id)
+                    report.photos += 1
+                }
+            }
+            guard !entry.isEmpty else { continue }
+            persist(entry)
+            report.imported += 1
+        }
+        importProgress = nil
+        importResult = report.summary
+    }
+
+    /// Writes an entry as-is (keeping its original modification date), for imports.
+    private func persist(_ e: Entry) {
+        guard let key, let json = try? JSONEncoder().encode(e),
+              let sealed = try? DiaryCrypto.seal(json, key: key, id: RecordName.entry(e.id)) else { return }
+        local.saveEnvelope(EntryEnvelope(modified: e.modified, sealed: sealed), id: e.id)
+        sync.enqueueSave(RecordName.entry(e.id))
+        upsert(e)
     }
 
     // MARK: Queries
