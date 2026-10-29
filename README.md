@@ -82,3 +82,11 @@ swift scripts/make-icon.swift Resources/Assets.xcassets/AppIcon.appiconset
 
 For TestFlight / Production builds, deploy the CloudKit schema (Vault, Entry, Photo) to Production first,
 the same way as for Uberdoer (see `~/Dev/tasker/docs/TESTFLIGHT.md`).
+
+## Releases
+
+`scripts/release-mac.sh 1.0.1` archives the Mac app, signs it with Developer ID, notarizes and staples it, and publishes
+`Hushbook-macOS-1.0.1.zip` as a GitHub release. Release builds sync through the CloudKit **Production** environment;
+deploy the schema (CloudKit Console → Deploy Schema Changes) before a release, or sync fails for record types that only
+exist in Development. iPhone/iPad builds can't be shipped as files; install them from Xcode or via TestFlight.
+
