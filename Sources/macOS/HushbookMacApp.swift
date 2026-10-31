@@ -42,6 +42,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             forName: .init("com.apple.screenIsLocked"), object: nil, queue: .main) { [weak self] _ in
                 MainActor.assumeIsolated { self?.store?.lock() }
             })
+        // hushbook-mcp sealed a note: if the diary is open, turn it into an entry now rather than at the next unlock.
+        observers.append(DistributedNotificationCenter.default().addObserver(forName: Inbox.arrived, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { Task { await self?.store?.importQuickNotes() } }
+        })
     }
 
     #if DEBUG

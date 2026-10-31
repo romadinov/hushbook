@@ -32,6 +32,11 @@ targets:
     dependencies:
       - package: WhisperKit
         product: WhisperKit
+      - target: HushbookMCP
+        embed: true
+        codeSign: true
+        copy:
+          destination: executables
     settings:
       base:
         PRODUCT_NAME: Hushbook
@@ -48,6 +53,23 @@ targets:
       configs:
         Release:
           CODE_SIGN_ENTITLEMENTS: Sources/macOS/Hushbook-Release.entitlements
+  HushbookMCP:
+    type: tool
+    platform: macOS
+    sources:
+      - Sources/MCP
+      - Sources/Shared/Crypto.swift
+      - Sources/Shared/Model.swift
+      - Sources/Shared/LocalStore.swift
+      - Sources/Shared/Location.swift
+      - Sources/Shared/Inbox.swift
+    settings:
+      base:
+        PRODUCT_NAME: hushbook-mcp
+        PRODUCT_BUNDLE_IDENTIFIER: com.romadinov.hushbook.mcp
+        ENABLE_HARDENED_RUNTIME: YES
+        SKIP_INSTALL: YES
+        GENERATE_INFOPLIST_FILE: NO
   HushbookIOS:
     type: application
     platform: iOS

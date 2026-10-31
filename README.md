@@ -31,6 +31,15 @@ the quick note window, not even right after writing. At the next unlock the note
 A device needs one unlock with this version before quick notes work there. Inbox notes stay on the device that wrote
 them until it is unlocked.
 
+### hushbook-mcp (write-only MCP server)
+
+`/Applications/Hushbook.app/Contents/MacOS/hushbook-mcp` is a stdio MCP server with one tool, `add_journal_note`
+(`text`, `date` required; `audio_path`, `latitude`/`longitude`, `external_id`, `source` optional). It seals into the
+same drop box as Quick Hashnote, so it works while the diary is locked and can't read anything back. A repeat
+`external_id` returns the same id without a duplicate (only a SHA-256 of the key is stored, in `received/`). A running,
+unlocked Hushbook imports new notes at once; otherwise at the next unlock, when coordinates also get a place name.
+`HUSHBOOK_DATA_DIR` points it at a scratch diary for testing.
+
 ## Voice notes
 
 The mic button in an entry records a voice note. It's encrypted like photos (`Audio` records in iCloud), playable in

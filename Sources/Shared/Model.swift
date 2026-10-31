@@ -65,11 +65,19 @@ struct QuickNote: Codable, Sendable {
         var id = UUID()
         var jpeg: Data
     }
+    /// A recording handed over with its transcript (e.g. from a voice recorder via hushbook-mcp).
+    struct Audio: Codable, Sendable {
+        var id = UUID()
+        var data: Data
+        var duration: Double
+        var transcript: String?
+    }
     var id = UUID()
     var date = Date()
     var text: String
     var photos: [Photo]
     var location: EntryLocation?
+    var audio: [Audio]? = nil   // optional: notes sealed before audio existed still decode
 }
 
 /// What is stored on disk and in iCloud for an entry: the sealed JSON plus a plaintext modification time used to

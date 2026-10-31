@@ -1,6 +1,7 @@
 import SwiftUI
 import CryptoKit
 import CloudKit
+import CoreLocation
 import Observation
 
 final class ImageBox: @unchecked Sendable {
@@ -435,22 +436,30 @@ final class DiaryStore {
     /// Seals a note with the drop box public key. Works while locked; nothing on this device can read the note
     /// until the diary is unlocked, when it becomes an ordinary entry.
     func addQuickNote(text: String, photos: [QuickNote.Photo], location: EntryLocation?) async -> Bool {
-        guard let raw = local.dropBoxKey(),
-              let recipient = try? Curve25519.KeyAgreement.PublicKey(rawRepresentation: raw) else { return false }
-        let id = UUID()
-        let sealed = await Task.detached { () -> Data? in
-            let note = QuickNote(id: id, text: text, photos: photos, location: location)
-            guard let json = try? JSONEncoder().encode(note) else { return nil }
-            return try? DropBox.seal(json, to: recipient, id: RecordName.quickNote(id))
-        }.value
-        guard let sealed else { return false }
-        local.saveQuickNote(sealed, id: id)
+        let note = QuickNote(text: text, photos: photos, location: location)
+        let local = self.local
+        guard (try? await Task.detached { try Inbox.deposit(note, into: local) }.value) != nil else { return false }
         if key != nil { await importQuickNotes() }
         return true
     }
 
     /// Turns sealed quick notes into entries. Also records the drop box public key for later quick notes.
-    private func importQuickNotes() async {
+    @ObservationIgnored private var importingQuickNotes = false
+    @ObservationIgnored private var quickNotesArrived = false
+
+    /// Also called when hushbook-mcp drops a note in while the diary is open.
+    func importQuickNotes() async {
+        guard key != nil else { return }
+        if importingQuickNotes { quickNotesArrived = true; return }
+        importingQuickNotes = true
+        defer { importingQuickNotes = false }
+        repeat {
+            quickNotesArrived = false
+            await importQuickNotesOnce()
+        } while quickNotesArrived && key != nil
+    }
+
+    private func importQuickNotesOnce() async {
         guard let key else { return }
         let dropBox = DropBox.privateKey(diaryKey: key)
         let publicKey = dropBox.publicKey.rawRepresentation
@@ -466,8 +475,24 @@ final class DiaryStore {
                     if !stored { stored = await addPhoto(photo.jpeg, id: photo.id) != nil }
                     if stored { photoIDs.append(photo.id) }
                 }
-                persist(Entry(id: note.id, date: note.date, text: note.text, photoIDs: photoIDs,
-                              created: note.date, modified: note.date, location: note.location))
+                var audio: [AudioNote] = []
+                for clip in note.audio ?? [] {
+                    if local.sealedAudio(clip.id) == nil {
+                        guard let sealed = try? DiaryCrypto.seal(clip.data, key: key, id: RecordName.audio(clip.id)) else { continue }
+                        local.saveAudio(sealed, id: clip.id)
+                        sync.enqueueSave(RecordName.audio(clip.id))
+                    }
+                    audio.append(AudioNote(id: clip.id, duration: clip.duration, recorded: note.date, transcript: clip.transcript ?? ""))
+                }
+                var location = note.location
+                if let bare = location, bare.name == nil, bare.locality == nil {   // handed over as coordinates only
+                    location = await EntryLocation.describe(CLLocation(latitude: bare.latitude, longitude: bare.longitude))
+                }
+                guard self.key != nil else { return }
+                var entry = Entry(id: note.id, date: note.date, text: note.text, photoIDs: photoIDs,
+                                  created: note.date, modified: note.date, location: location)
+                entry.audio = audio
+                persist(entry)
             }
             local.deleteQuickNote(id)
         }

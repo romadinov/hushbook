@@ -1,5 +1,6 @@
 import Foundation
 import CloudKit
+import CryptoKit
 
 /// Everything on disk is either ciphertext or non-secret metadata. Decrypted text and images live only in memory.
 ///
@@ -9,6 +10,7 @@ import CloudKit
 ///     Hushbook/audio/<id>.bin      sealed M4A voice note
 ///     Hushbook/inbox/<id>.bin      quick note sealed to the drop box key, waiting for the next unlock
 ///     Hushbook/dropbox.pub         the drop box public key (see DropBox)
+///     Hushbook/received/<hash>     note id for an external_id handed to hushbook-mcp (repeat calls make no duplicate)
 ///     Hushbook/ck/<record>.sys     CloudKit system fields (change tags)
 ///     Hushbook/sync-state.json     CKSyncEngine state
 final class LocalStore: @unchecked Sendable {
@@ -17,14 +19,18 @@ final class LocalStore: @unchecked Sendable {
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
 
-    init() {
-        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        var dir = base.appendingPathComponent("Hushbook", isDirectory: true)
+    static var defaultRoot: URL {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Hushbook", isDirectory: true)
+    }
+
+    init(root explicitRoot: URL? = nil) {
+        var dir = explicitRoot ?? Self.defaultRoot
         #if DEBUG
-        if let demo = ProcessInfo.processInfo.environment["HUSHBOOK_DATA_DIR"] { dir = URL(fileURLWithPath: demo, isDirectory: true) }
+        if explicitRoot == nil, let demo = ProcessInfo.processInfo.environment["HUSHBOOK_DATA_DIR"] { dir = URL(fileURLWithPath: demo, isDirectory: true) }
         #endif
         root = dir
-        for dir in ["entries", "photos", "audio", "inbox", "ck"] {
+        for dir in ["entries", "photos", "audio", "inbox", "received", "ck"] {
             try? FileManager.default.createDirectory(at: root.appendingPathComponent(dir), withIntermediateDirectories: true)
         }
         #if os(iOS)
@@ -164,6 +170,20 @@ final class LocalStore: @unchecked Sendable {
                 return (id, data)
             }
         }
+    }
+
+    /// Note id already sealed for a sender's idempotency key. The file name is a hash of the key, not the key itself.
+    func receivedNote(for externalID: String) -> UUID? {
+        locked { (try? String(contentsOf: receivedURL(externalID), encoding: .utf8)).flatMap(UUID.init(uuidString:)) }
+    }
+
+    func markReceived(_ externalID: String, note: UUID) {
+        locked { write(Data(note.uuidString.utf8), to: receivedURL(externalID)) }
+    }
+
+    private func receivedURL(_ externalID: String) -> URL {
+        let hash = SHA256.hash(data: Data("hushbook.received.v1:\(externalID)".utf8)).map { String(format: "%02x", $0) }.joined()
+        return root.appendingPathComponent("received/\(hash)")
     }
 
     // MARK: CloudKit metadata
